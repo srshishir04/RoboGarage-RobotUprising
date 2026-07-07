@@ -1052,9 +1052,27 @@ def _run_match(brain, difficulty, mode, ai_robots):
 
         H = _get_homography()
         def warp(pt): return _warp_point(pt, H) if (pt and H is not None) else pt
-        gc_w  = warp(gc); ogc_w = warp(ogc)
-        balls_w = [(*(warp((bx, by)) if H is not None else (bx, by)), col)
-                   for (bx, by, col) in all_balls]
+
+        # ── GOAL POSITIONS ──────────────────────────────────────────────────
+        # The trained model used STATIC goals (Unity AIGoal/OwnGoal transforms),
+        # NOT ArUco markers. On a fixed arena the goal never moves, so we use
+        # hardcoded bird's-eye positions (config Section 2c) rather than markers
+        # 5/6 — which don't exist in training and only add a failure mode. These
+        # fractions are ALREADY in warped bird's-eye space, so they are NOT
+        # warped again. Falls back to live markers only if USE_FIXED_GOALS is
+        # off (or before the homography has locked).
+        if getattr(C, "USE_FIXED_GOALS", False) and H is not None:
+            sz = C.BIRDSEYE_SIZE
+            gc_w  = (C.GOAL_FIXED_X_FRAC     * sz, C.GOAL_FIXED_Z_FRAC     * sz)
+            ogc_w = (C.OWN_GOAL_FIXED_X_FRAC * sz, C.OWN_GOAL_FIXED_Z_FRAC * sz)
+        else:
+            gc_w  = warp(gc); ogc_w = warp(ogc)
+
+        # Ball centres in balls_tracked are ALREADY in bird's-eye space (the ball
+        # thread detects on the warped frame). Do NOT warp them again — a second
+        # warp pushes the ball off-frame and desyncs it from the robot/goal
+        # coordinate space, which was the root cause of the "won't chase" bug.
+        balls_w = [(bx, by, col) for (bx, by, col) in all_balls]
 
         n, cx, cy = _frame_scale()
         meters_per_px   = ARENA_HALF_M / n
