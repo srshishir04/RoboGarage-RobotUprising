@@ -47,7 +47,7 @@ UNITY_DISPLAY_PORT = 4215 # Python → Unity   (annotated JPEG feed for the Game
 #     UNITY_DISPLAY_PORT instead of capturing.
 # ─────────────────────────────────────────────────────────────────────────────
 
-CAMERA_INDEX     = 0       # OpenCV device index. Try 1, 2, ... if 0 is wrong/not found.
+CAMERA_INDEX     = 1       # OpenCV device index. Try 1, 2, ... if 0 is wrong/not found.
 CAMERA_WIDTH     = 1280    # 1280x720 recommended; higher = more CPU for detection.
 CAMERA_HEIGHT    = 720
 CAMERA_FPS       = 30
@@ -65,7 +65,7 @@ CAMERA_USE_DSHOW = True     # Windows: CAP_DSHOW backend exposes exposure reliab
 CAMERA_AUTO_EXPOSURE_MANUAL = 1
 CAMERA_AUTO_EXPOSURE_AUTO   = 0.75
 
-CAMERA_EXPOSURE_DEFAULT = -8     # "as dark as possible while still usable" (reduces motion blur)
+CAMERA_EXPOSURE_DEFAULT = -7     # "as dark as possible while still usable" (reduces motion blur)
 CAMERA_EXPOSURE_MIN     = -13    # slider lower bound  (more negative = darker on many drivers)
 CAMERA_EXPOSURE_MAX     = 0      # slider upper bound
 CAMERA_GAIN_DEFAULT     = 25    # mid-range; corners need adequate light (gain=6
@@ -118,6 +118,31 @@ ARENA_CORNER_IDS = {
     47: "bottom_left",
     46: "bottom_right",
 }
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 2c. FIXED GOAL POSITIONS  (sim-to-real critical)
+#     The trained model used STATIC goals — Unity AIGoal/OwnGoal transforms at
+#     fixed arena corners — NOT ArUco markers. On a fixed physical arena the
+#     goal never moves, so we hardcode its bird's-eye position instead of
+#     detecting markers 5/6 (which don't exist in the training scene and only
+#     add a failure mode). brain_runner uses these directly in bird's-eye space
+#     (they are NOT warped again).
+#
+#     Values are fractions of BIRDSEYE_SIZE (0=left/top, 1=right/bottom),
+#     MEASURED live by placing the ball at each net centre and reading the
+#     bird's-eye position. To re-calibrate, place the ball at each goal and
+#     divide its warped pixel by BIRDSEYE_SIZE.
+#
+#     Verified consistent with training (Z_FLIP=True, MIRROR_X=True):
+#       scoring goal → obs (+X,+Z) = Unity AIGoal (orange, top-right)
+#       own goal     → obs (−X,−Z) = Unity OwnGoal (dark,   bottom-left)
+# ─────────────────────────────────────────────────────────────────────────────
+
+USE_FIXED_GOALS        = True    # False → fall back to live ArUco markers 5/6
+GOAL_FIXED_X_FRAC      = 0.136   # scoring goal (AI attacks / shoots into)
+GOAL_FIXED_Z_FRAC      = 0.124
+OWN_GOAL_FIXED_X_FRAC  = 0.874   # own goal (AI defends)
+OWN_GOAL_FIXED_Z_FRAC  = 0.865
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 2b. ARUCO DETECTION  — ONE dictionary for the whole arena.
