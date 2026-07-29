@@ -187,7 +187,7 @@ cross-referencing scene/prefab GUIDs against every script's `.meta` file:
 | Item | Question |
 |---|---|
 | `Assets/Scenes/MainScene.unity` | Delete along with the rest of the legacy stack, or keep as a reference/future "virtual simulation" mode? Unlike the `_Recovery` files, this is a deliberately-built, self-consistent (if legacy) scene, not an accidental duplicate — your call, not a code-derivable answer. |
-| ML-Agents training config (`.yaml`) | **Not present in git on any branch, ever** (checked full history across `main`, `Unity`, `Python_and_brain_file`, and the `Brain_file` remote branch). Either it only ever existed locally and was never committed, or it's been lost. If you have a local copy, it should be added to the repo — otherwise the exact hyperparameters behind `RobotAgent.onnx` are undocumented. |
+| ML-Agents training config (`.yaml`) | **Resolved (skipped):** not present in git on any branch, ever. The only local `trainer_config.yaml` found belonged to an unrelated project (`ai-simulator`, behavior name `AIRobotGeneric`, not `RobotAgent`). The real file lives on another machine — owner will add it separately when available. Not blocking the rest of this cleanup. |
 | `TrainingArena.unity`'s `"GUI_TurtleAgent"` GameObject | The scene has an empty, scriptless GameObject named after the dead script (coincidence, or leftover placeholder?). Once the script is gone, do you want this GameObject renamed/removed too, or is it a deliberately-named empty anchor? |
 
 ---
