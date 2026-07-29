@@ -34,7 +34,9 @@ public static class GameSettings
     public static MatchMode Match = MatchMode.OneVOne; 
 
     // AI brain file - Loaded by GameSceneUI / brain_runner.py at match start.
-    public static string OnnxFileName = "Easy.onnx";
+    // Filename convention: <mode>_<difficulty>.onnx (e.g. "1v1_easy.onnx", "2v2_hard.onnx"),
+    // matching ai_robot/brains/ and config.py's ONNX_PATHS.
+    public static string OnnxFileName = "1v1_easy.onnx";
 
     // Human-controlled opponent (future use).
     public static string OpponentOnnxFileName = "";
@@ -56,7 +58,7 @@ public static class GameSettings
     public static void SetDifficulty(TrainingMode difficulty)
     {
         Difficulty = difficulty;
-        OnnxFileName = DeriveOnnxFileName(difficulty);
+        OnnxFileName = DeriveOnnxFileName(Match, difficulty);
 
         Debug.Log($"[GameSettings] Difficulty = {Difficulty}  " +
                   $"obs = {ObsSize}  model = {OnnxFileName}");
@@ -64,11 +66,15 @@ public static class GameSettings
 
     // Set match mode. Updates RobotsPerTeam automatically.
     // Call from MainMenuUI mode buttons.
+    // Also re-derives OnnxFileName, since 1v1 and 2v2 use different brain files
+    // for the same difficulty (e.g. "1v1_easy.onnx" vs "2v2_easy.onnx").
     public static void SetMatchMode(MatchMode mode)
     {
         Match = mode;
+        OnnxFileName = DeriveOnnxFileName(Match, Difficulty);
+
         Debug.Log($"[GameSettings] MatchMode = {MatchLabel}  " +
-                  $"robots/team = {RobotsPerTeam}");
+                  $"robots/team = {RobotsPerTeam}  model = {OnnxFileName}");
     }
 
     // Reset all settings to defaults.
@@ -77,7 +83,7 @@ public static class GameSettings
     {
         Difficulty = TrainingMode.Easy;
         Match = MatchMode.OneVOne;
-        OnnxFileName = "Easy.onnx";
+        OnnxFileName = DeriveOnnxFileName(Match, Difficulty);
         OpponentOnnxFileName = "";
     }
 
@@ -102,13 +108,16 @@ public static class GameSettings
         }
     }
 
-    private static string DeriveOnnxFileName(TrainingMode d)
+    private static string DeriveOnnxFileName(MatchMode m, TrainingMode d)
     {
+        string mode = m == MatchMode.OneVOne ? "1v1" : "2v2";
+        string difficulty;
         switch (d)
         {
-            case TrainingMode.Medium: return "Medium.onnx";
-            case TrainingMode.Hard: return "Hard.onnx";
-            default: return "Easy.onnx";
+            case TrainingMode.Medium: difficulty = "medium"; break;
+            case TrainingMode.Hard: difficulty = "hard"; break;
+            default: difficulty = "easy"; break;
         }
+        return $"{mode}_{difficulty}.onnx";
     }
 }

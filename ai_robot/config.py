@@ -213,11 +213,20 @@ CORNER_FRESH_SECONDS     = 0.5
 # 5. MODELS  (resolved next to this file)
 # ─────────────────────────────────────────────────────────────────────────────
 
-# Rename your new Easy export RobotAgent.onnx → Easy.onnx, or change "easy" below.
+# Brain files live in ai_robot/brains/, named <mode>_<difficulty>.onnx.
+_BRAINS_DIR = os.path.join(_HERE, "brains")
+
 ONNX_PATHS = {
-    "easy":   os.path.join(_HERE, "Easy.onnx"),
-    "medium": os.path.join(_HERE, "Medium.onnx"),
-    "hard":   os.path.join(_HERE, "Hard.onnx"),
+    "1v1": {
+        "easy":   os.path.join(_BRAINS_DIR, "1v1_easy.onnx"),
+        "medium": os.path.join(_BRAINS_DIR, "1v1_medium.onnx"),
+        "hard":   os.path.join(_BRAINS_DIR, "1v1_hard.onnx"),
+    },
+    "2v2": {
+        "easy":   os.path.join(_BRAINS_DIR, "2v2_easy.onnx"),
+        "medium": os.path.join(_BRAINS_DIR, "2v2_medium.onnx"),
+        "hard":   os.path.join(_BRAINS_DIR, "2v2_hard.onnx"),
+    },
 }
 
 # Observation sizes for the REDESIGNED models. MUST match RobotAgent.cs

@@ -249,8 +249,8 @@ class Brain:
         if not os.path.isfile(model_path):
             raise FileNotFoundError(
                 f"Model file not found: {model_path}\n"
-                f"  -> Rename your new Easy export to 'Easy.onnx' (or fix config.ONNX_PATHS) "
-                f"and place Easy/Medium/Hard .onnx next to config.py.")
+                f"  -> Place the trained .onnx in ai_robot/brains/ as <mode>_<difficulty>.onnx "
+                f"(e.g. brains/1v1_easy.onnx, brains/2v2_hard.onnx), or fix config.ONNX_PATHS.")
         try:
             self.session = ort.InferenceSession(model_path, providers=["CPUExecutionProvider"])
         except Exception as e:
@@ -976,7 +976,7 @@ def brain_thread_fn():
 
         obs_size = EXPECTED_OBS.get(difficulty, 13)
         try:
-            brain = Brain(C.ONNX_PATHS.get(difficulty), obs_size)
+            brain = Brain(C.ONNX_PATHS.get(mode, {}).get(difficulty), obs_size)
         except Exception as e:
             print(f"[Brain] ERROR: {e}")
             send_unity_event("disconnect")
