@@ -953,10 +953,10 @@ MonoBehaviour:
   cameraView: {fileID: 245965805}
   exposureMin: -13
   exposureMax: 0
-  exposureDefault: -6
+  exposureDefault: -7
   gainMin: 0
   gainMax: 255
-  gainDefault: 40
+  gainDefault: 25
   exposureSlider: {fileID: 1161734387}
   gainSlider: {fileID: 140853543}
   autoToggle: {fileID: 1255092449}
