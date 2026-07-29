@@ -47,7 +47,7 @@ UNITY_DISPLAY_PORT = 4215 # Python → Unity   (annotated JPEG feed for the Game
 #     UNITY_DISPLAY_PORT instead of capturing.
 # ─────────────────────────────────────────────────────────────────────────────
 
-CAMERA_INDEX     = 1       # OpenCV device index. Try 1, 2, ... if 0 is wrong/not found.
+CAMERA_INDEX     = 0       # OpenCV device index. Try 1, 2, ... if 0 is wrong/not found.
 CAMERA_WIDTH     = 1280    # 1280x720 recommended; higher = more CPU for detection.
 CAMERA_HEIGHT    = 720
 CAMERA_FPS       = 30
@@ -98,8 +98,8 @@ DISPLAY_MAX_UDP_BYTES = 60000  # JPEG larger than this is downscaled before send
 ESP32_CMD_PORT    = 4210   # Python → ESP32   (motor command byte: F/L/R/S)
 ESP32_STATUS_PORT = 4214   # ESP32  → Python   (status beacon "OK")
 
-ROBOT1_IP = "192.168.8.149"   # AI Robot 1  (ArUco ID 1) — set from ESP32 serial output
-ROBOT2_IP = "192.168.8.152"   # AI Robot 2  (ArUco ID 2) — set from ESP32 serial output
+ROBOT1_IP = "192.168.8.188"   # AI Robot 1  (ArUco ID 1) — set from ESP32 serial output
+ROBOT2_IP = "192.168.8.149"   # AI Robot 2  (ArUco ID 2) — set from ESP32 serial output
 
 ARUCO_ID_ROBOT1   = 1    # AI robot 1
 ARUCO_ID_ROBOT2   = 2    # AI robot 2 (2v2)
@@ -277,7 +277,7 @@ MIRROR_X     = True
 # ─────────────────────────────────────────────────────────────────────────────
 
 ARENA_HALF_M       = 0.75    # ↔ RobotAgent.cs arenaHalfSize (real arena 1.5m → 0.75)
-CONTROL_DIST_M     = 0.20    # ↔ controlDistance — ball "in control" within this range
+CONTROL_DIST_M     = 0.10    # ↔ controlDistance — ball "in control" within this range
 CONTROL_FACING_DOT = 0.30    # ↔ controlFacingDot — ball must be in front (dot threshold)
 GOAL_RADIUS_M      = 0.20    # ↔ goalRadius — ball within this of a goal = scored
 VEL_SCALE          = 1.5     # ↔ velScale — m/s that maps to a ball-velocity obs of 1.0

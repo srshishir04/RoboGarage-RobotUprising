@@ -366,7 +366,7 @@ def _draw_headings(img, items, H):
         nrm = math.hypot(dx, dy) or 1e-6
         L = 70
         ex, ey = int(cx + dx / nrm * L), int(cy + dy / nrm * L)
-        cv2.arrowedLine(img, (cx, cy), (ex, ey), (0, 255, 255), 3, tipLength=0.35)
+        cv2.arrowedLine(img, (cx, cy), (ex, ey), (0, 255, 255), 3, tipLength=0.2)
         cv2.putText(img, str(mid), (cx + 6, cy - 6),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
 
