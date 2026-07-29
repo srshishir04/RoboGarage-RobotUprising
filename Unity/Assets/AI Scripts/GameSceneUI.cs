@@ -17,9 +17,8 @@ using TMPro;
 ///   • Camera feed (RawImage) + FrameSender lifecycle (START/STOP to Python).
 ///   • Connection dot — green while Python heartbeats arrive, red otherwise.
 ///   • Kickoff trigger — first heartbeat calls LiveMatchManager.BeginMatch().
-///   • HUD display: mode/difficulty label, scoreboard, clock, half, kickoff/respawn text.
+///   • HUD display: mode/difficulty label, scoreboard, count-up clock, kickoff/respawn text.
 ///   • Flash feedback (goal / pickup / wall / tackle).
-///   • Halftime banner + match-end overlay.
 ///   • Routes Python goal events into LiveMatchManager.RegisterGoal(...).
 ///
 /// NOT RESPONSIBLE FOR
@@ -44,8 +43,7 @@ public class GameSceneUI : MonoBehaviour
     [SerializeField] private TextMeshProUGUI scoreText;         // "AI  0 — 0  Human"
     [SerializeField] private TextMeshProUGUI scoreAIText;       // optional separate label
     [SerializeField] private TextMeshProUGUI scoreHumanText;    // optional separate label
-    [SerializeField] private TextMeshProUGUI halfText;          // "1st" / "2nd"
-    [SerializeField] private TextMeshProUGUI timerText;         // "03:00"
+    [SerializeField] private TextMeshProUGUI timerText;         // "03:00" (elapsed, counts up)
     [SerializeField] private Image connectionDot;     // green/red
 
     // ── Camera ──────────────────────────────────────────────────────────────────
@@ -67,17 +65,6 @@ public class GameSceneUI : MonoBehaviour
     [SerializeField] private CanvasGroup flashPanel;
     [SerializeField] private TextMeshProUGUI flashText;
 
-    // ── Halftime banner ───────────────────────────────────────────────────────────
-    [Header("Halftime banner")]
-    [SerializeField] private CanvasGroup halftimeBanner;
-    [SerializeField] private TextMeshProUGUI halftimeText;
-
-    // ── Match end overlay ─────────────────────────────────────────────────────────
-    [Header("Match end overlay")]
-    [SerializeField] private CanvasGroup matchEndPanel;
-    [SerializeField] private TextMeshProUGUI winnerText;
-    [SerializeField] private TextMeshProUGUI finalScoreText;
-
     // ── UDP ────────────────────────────────────────────────────────────────────────
     [Header("UDP — Python → Unity events")]
     [Tooltip("Must match config.py UNITY_EVENT_PORT (default 4211).")]
@@ -94,16 +81,13 @@ public class GameSceneUI : MonoBehaviour
 
     private const float CONNECTION_TIMEOUT = 3f;
     private const float FLASH_FADE_SPEED = 1.5f;
-    private const float HALFTIME_FADE_SPEED = 2.0f;
-    private const float HALFTIME_HOLD = 3.0f;
 
     // ── Runtime state ─────────────────────────────────────────────────────────────
     private LiveMatchManager match;
 
     private int scoreAI = 0;
     private int scoreHuman = 0;
-    private float halfSecondsRemaining = 0f;
-    private int currentHalf = 1;
+    private float elapsedSeconds = 0f;   // counts up; no period, no auto-end
 
     private bool running = true;
 
@@ -132,18 +116,14 @@ public class GameSceneUI : MonoBehaviour
     private void Start()
     {
         LiveMatchManager.OnScoreChanged += HandleScoreChanged;
-        LiveMatchManager.OnMatchEnd += HandleMatchEnd;
-        LiveMatchManager.OnHalftime += HandleHalftime;
         LiveMatchManager.OnClockTick += HandleClockTick;
         LiveMatchManager.OnKickoffCountdown += HandleKickoffCountdown;
 
         ApplyModeLabel();
         UpdateScoreDisplay();
-        halfSecondsRemaining = GameSettings.MatchDurationSeconds;
+        elapsedSeconds = 0f;
         UpdateTimerDisplay();
 
-        if (halftimeBanner != null) { halftimeBanner.alpha = 0f; halftimeBanner.blocksRaycasts = false; }
-        if (matchEndPanel != null) { matchEndPanel.alpha = 0f; matchEndPanel.blocksRaycasts = false; }
         if (flashPanel != null) flashPanel.alpha = 0f;
         if (respawnText != null) respawnText.text = "";
         if (connectionDot != null) connectionDot.color = DOT_RED;
@@ -164,8 +144,6 @@ public class GameSceneUI : MonoBehaviour
     private void OnDestroy()
     {
         LiveMatchManager.OnScoreChanged -= HandleScoreChanged;
-        LiveMatchManager.OnMatchEnd -= HandleMatchEnd;
-        LiveMatchManager.OnHalftime -= HandleHalftime;
         LiveMatchManager.OnClockTick -= HandleClockTick;
         LiveMatchManager.OnKickoffCountdown -= HandleKickoffCountdown;
 
@@ -195,7 +173,7 @@ public class GameSceneUI : MonoBehaviour
         // control messages — it no longer sends frames, just START/STOP on 4213).
         frameSender = GetComponent<FrameSender>();
         if (frameSender == null) frameSender = gameObject.AddComponent<FrameSender>();
-        frameSender.Init(null);   // no WebCamTexture needed anymore
+        frameSender.Init();   // opens the control socket (no camera capture anymore)
 
         // Small delay so CameraControl's display socket is bound first.
         yield return new WaitForSeconds(0.3f);
@@ -295,23 +273,9 @@ public class GameSceneUI : MonoBehaviour
                   scoringTeam == "AI" ? C_GOAL : C_CONCEDE);
     }
 
-    private void HandleMatchEnd(int ai, int human)
+    private void HandleClockTick(float secondsElapsed)
     {
-        scoreAI = ai; scoreHuman = human;
-        UpdateScoreDisplay();
-        ShowMatchEndOverlay(ai, human);
-    }
-
-    private void HandleHalftime()
-    {
-        currentHalf = 2;
-        UpdateTimerDisplay();
-        StartCoroutine(ShowHalftimeBanner());
-    }
-
-    private void HandleClockTick(float secondsRemaining)
-    {
-        halfSecondsRemaining = secondsRemaining;
+        elapsedSeconds = secondsElapsed;
         UpdateTimerDisplay();
     }
 
@@ -347,11 +311,10 @@ public class GameSceneUI : MonoBehaviour
 
     private void UpdateTimerDisplay()
     {
-        if (halfText != null) halfText.text = currentHalf == 1 ? "1st" : "2nd";
         if (timerText != null)
         {
-            int mins = (int)(halfSecondsRemaining / 60f);
-            int secs = (int)(halfSecondsRemaining % 60f);
+            int mins = (int)(elapsedSeconds / 60f);
+            int secs = (int)(elapsedSeconds % 60f);
             timerText.text = $"{mins:00}:{secs:00}";
         }
     }
@@ -374,7 +337,7 @@ public class GameSceneUI : MonoBehaviour
     }
 
     // =========================================================================
-    //  FLASH / HALFTIME / MATCH-END
+    //  FLASH
     // =========================================================================
     private void ShowFlash(string message, Color color)
     {
@@ -386,33 +349,6 @@ public class GameSceneUI : MonoBehaviour
     {
         if (flashPanel == null || flashPanel.alpha <= 0f) return;
         flashPanel.alpha = Mathf.MoveTowards(flashPanel.alpha, 0f, Time.deltaTime * FLASH_FADE_SPEED);
-    }
-
-    private IEnumerator ShowHalftimeBanner()
-    {
-        if (halftimeBanner == null) yield break;
-        if (halftimeText != null) halftimeText.text = "HALF TIME";
-        halftimeBanner.blocksRaycasts = true;
-        yield return FadeCanvasGroup(halftimeBanner, 0f, 1f, 1f / HALFTIME_FADE_SPEED);
-        yield return new WaitForSeconds(HALFTIME_HOLD);
-        yield return FadeCanvasGroup(halftimeBanner, 1f, 0f, 1f / HALFTIME_FADE_SPEED);
-        halftimeBanner.blocksRaycasts = false;
-    }
-
-    private void ShowMatchEndOverlay(int ai, int human)
-    {
-        if (matchEndPanel == null) return;
-
-        if (winnerText != null)
-        {
-            if (ai > human) { winnerText.text = "AI WINS! 🤖"; winnerText.color = new Color(0.20f, 0.85f, 0.30f); }
-            else if (human > ai) { winnerText.text = "HUMAN WINS! 🏆"; winnerText.color = new Color(0.86f, 0.67f, 0.16f); }
-            else { winnerText.text = "DRAW!"; winnerText.color = Color.white; }
-        }
-        if (finalScoreText != null) finalScoreText.text = $"{ai}  —  {human}";
-
-        StartCoroutine(FadeCanvasGroup(matchEndPanel, 0f, 1f, 0.5f));
-        matchEndPanel.blocksRaycasts = true;
     }
 
     // =========================================================================
@@ -446,18 +382,5 @@ public class GameSceneUI : MonoBehaviour
         if (webcamTexture != null && webcamTexture.isPlaying) webcamTexture.Stop();
         // (webcamTexture is normally null now — Python owns the camera. Guard kept
         //  harmless in case an older build path created one.)
-    }
-
-    private static IEnumerator FadeCanvasGroup(CanvasGroup cg, float from, float to, float duration)
-    {
-        float elapsed = 0f;
-        cg.alpha = from;
-        while (elapsed < duration)
-        {
-            elapsed += Time.deltaTime;
-            cg.alpha = Mathf.Lerp(from, to, elapsed / duration);
-            yield return null;
-        }
-        cg.alpha = to;
     }
 }

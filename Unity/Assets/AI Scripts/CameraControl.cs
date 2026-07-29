@@ -7,22 +7,22 @@ using System.Threading;
 using System.Collections.Concurrent;
 
 /// <summary>
-/// CameraControl — Python owns the physical webcam; Unity displays the feed and
+/// CameraControl ï¿½ Python owns the physical webcam; Unity displays the feed and
 /// drives exposure/gain. Replaces the old Unity-captures / FrameSender pattern.
 ///
 /// Two jobs:
 ///   1. RECEIVE the processed JPEG feed from brain_runner.py on displayPort (4215)
 ///      and blit it onto the GameScene camera RawImage. Because the feed comes
 ///      from the REAL camera, the panel visibly darkens/brightens when the
-///      exposure slider moves — that is the operator's live feedback loop.
+///      exposure slider moves ï¿½ that is the operator's live feedback loop.
 ///   2. SEND slider changes to brain_runner.py on controlPort (4213):
 ///        "CAMERA:<exposure>:<gain>:<auto 0|1>"   applied live to the webcam
 ///        "CAMERA_SAVE"                            persist to camera_settings.json
 ///
 /// Wiring in GameScene:
-///   • Put this on the same GameObject as GameSceneUI (the "Manager").
-///   • Assign cameraView  -> the same RawImage GameSceneUI used for the feed.
-///   • Assign exposureSlider, gainSlider, autoToggle, saveButton (see CameraSliderUI).
+///   ï¿½ Put this on the same GameObject as GameSceneUI (the "Manager").
+///   ï¿½ Assign cameraView  -> the same RawImage GameSceneUI used for the feed.
+///   ï¿½ Assign exposureSlider, gainSlider, autoToggle, saveButton (see CameraSliderUI).
 /// </summary>
 public class CameraControl : MonoBehaviour
 {
@@ -37,12 +37,12 @@ public class CameraControl : MonoBehaviour
     [Header("Slider limits (mirror config.py)")]
     [SerializeField] private int exposureMin = -13;
     [SerializeField] private int exposureMax = 0;
-    [SerializeField] private int exposureDefault = -6;
+    [SerializeField] private int exposureDefault = -7;
     [SerializeField] private int gainMin = 0;
     [SerializeField] private int gainMax = 255;
-    [SerializeField] private int gainDefault = 40;
+    [SerializeField] private int gainDefault = 25;
 
-    [Header("UI (optional — assign if you use the built-in slider panel)")]
+    [Header("UI (optional ï¿½ assign if you use the built-in slider panel)")]
     [SerializeField] private Slider exposureSlider;
     [SerializeField] private Slider gainSlider;
     [SerializeField] private Toggle autoToggle;
@@ -202,7 +202,7 @@ public class CameraControl : MonoBehaviour
     private void OnAutoChanged(bool on)
     {
         _auto = on;
-        // When auto is on, the manual sliders have no effect — grey them out.
+        // When auto is on, the manual sliders have no effect ï¿½ grey them out.
         if (exposureSlider != null) exposureSlider.interactable = !on;
         if (gainSlider != null) gainSlider.interactable = !on;
         SendCameraSettings(force: true);

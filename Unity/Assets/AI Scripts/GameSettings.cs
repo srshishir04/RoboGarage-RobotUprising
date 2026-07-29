@@ -47,10 +47,6 @@ public static class GameSettings
     // Automatically derived from MatchMode. MatchManager.cs and coordinator.py both read this.
     public static int RobotsPerTeam => (int)Match;   // (int) converts enum to number, Example: OneVOne=1, TwoVTwo=2, so (int)Match = 1 or 2
 
-    // Length of one half of the match in seconds.
-    // MatchManager.cs uses this for the countdown timer.
-    public static int MatchDurationSeconds = 180;     // 3-minute halves
-
     // Display strings 
     public static string DifficultyLabel => Difficulty.ToString(); // converts enum into text, Example: "TrainingMode.Easy" becomes "Easy"
     public static string MatchLabel => Match == MatchMode.OneVOne ? "1v1" : "2v2";
@@ -83,7 +79,6 @@ public static class GameSettings
         Match = MatchMode.OneVOne;
         OnnxFileName = "Easy.onnx";
         OpponentOnnxFileName = "";
-        MatchDurationSeconds = 180;
     }
 
     // VALIDATION  (call before loading the game scene)
