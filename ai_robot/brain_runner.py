@@ -28,6 +28,7 @@ WHAT CHANGED IN THIS REVISION
   • Robust display send: JPEG is downscaled if it would exceed one UDP datagram.
 """
 
+import sys
 import cv2
 import numpy as np
 import threading
@@ -40,6 +41,16 @@ import os
 import onnxruntime as ort
 
 import config as C
+
+# Many status lines below use em-dashes / box-drawing characters. Windows
+# consoles default to a legacy codepage (e.g. cp1252) that can't encode them,
+# which crashes every print() call rather than just mangling the glyph.
+# Force UTF-8 with a lossy fallback so the runtime never dies on cosmetics.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
 
 # ── Redesign constants (config overrides if present) ─────────────────────────
 ARENA_HALF_M       = getattr(C, "ARENA_HALF_M", 0.75)
