@@ -1,12 +1,38 @@
-﻿using UnityEngine;
+using UnityEngine;
+using UnityEngine.Serialization;
 
-/* ── Fake AI opponent robot ────────-
+/* ── Scripted opponent — progressive sparring partner ─────────────────────
  * The robot behaves like:
- * Go to ball
+ * Go to ball (or its predicted intercept point, at higher skill)
  * Pick ball
- * Go to goal and score
+ * Go to goal and score (aim gets more precise at higher skill)
  * Repeat
- * ───────────────────────────────────── */
+ *
+ * REDESIGN vs the previous version — WHY:
+ *   Diagnosed earlier: the previous "wrong goal" report was NOT a code bug —
+ *   `targetGoal` (renamed from `scoringGoal`, see FormerlySerializedAs below
+ *   so existing Inspector wiring migrates automatically) was and is correctly
+ *   wired to the AI's DEFENDED goal, which is exactly where this opponent is
+ *   supposed to score (that's how it scores AGAINST the AI). Renamed only for
+ *   clarity; the wiring/behaviour is unchanged.
+ *
+ *   What DID change: difficulty used to be 3 fixed presets (HESITATION_CHANCE /
+ *   SPEED_MULT indexed by enum) — a training partner that's either a pushover
+ *   or a wall, with nothing in between. Added a continuous `skillLevel` (0..1)
+ *   axis, orthogonal to the existing speed multiplier (curriculum's
+ *   "opponent_speed" is unchanged), driven by a new "opponent_skill" curriculum
+ *   parameter (see RobotAgent.ApplyOpponentSkillCurriculum). Skill blends THREE
+ *   behaviours continuously instead of jumping between 3 presets:
+ *     - hesitation chance (unchanged mechanic, now continuous)
+ *     - interception: at low skill, chases the ball's CURRENT position; at high
+ *       skill, leads it — aims at a predicted point ahead of the ball's motion,
+ *       so a fast learner faces genuine anticipation, not just a faster chaser.
+ *     - aim precision: at low skill, its shot has a lateral jitter (rolled once
+ *       per possession, not per-frame, so it doesn't look twitchy); at high
+ *       skill the jitter shrinks to ~0, i.e. it shoots straight.
+ *   This gives the RL agent a partner that can be curriculum-ramped smoothly
+ *   just above its current skill, instead of stepping between 3 discrete rungs.
+ * ───────────────────────────────────────────────────────────────────────── */
 
 // This tells unity that this gameobject must have rigidbody. If missing, unity automatically adds one
 [RequireComponent(typeof(Rigidbody))]
@@ -34,8 +60,12 @@ public class ScriptedOpponent : MonoBehaviour
     [SerializeField] private Transform ballA;
     [SerializeField] private Transform ballB;
 
-    [Tooltip("The goal this opponent scores IN — which is the AI's defended goal (OwnGoal).")]
-    [SerializeField] private Transform scoringGoal;
+    [Tooltip("The goal this opponent scores IN — the AI's DEFENDED goal (OwnGoal). " +
+             "This is correct and intentional: the opponent scoring here IS it scoring " +
+             "against the AI. Renamed from 'scoringGoal' for clarity only — existing " +
+             "Inspector references migrate automatically via FormerlySerializedAs.")]
+    [FormerlySerializedAs("scoringGoal")]
+    [SerializeField] private Transform targetGoal;
 
     [Tooltip("Parent arena object. Used for local-space position resets.")]
     [SerializeField] private Transform arenaRoot;
@@ -48,14 +78,20 @@ public class ScriptedOpponent : MonoBehaviour
     [SerializeField] private float goalDistance = 0.30f;
 
     [Header("Movement")]
-    [Tooltip("Base movement speed in m/s. Scaled by difficulty.")]
+    [Tooltip("Base movement speed in m/s. Scaled by difficulty tier and the speed multiplier.")]
     [SerializeField] private float baseSpeed = 1.2f;
 
     [Tooltip("How fast the opponent turns toward its target (degrees/second).")]
     [SerializeField] private float turnSpeed = 180f;
 
-    [Header("Opponent difficulty")]
+    [Header("Opponent difficulty (speed tier + default skill baseline)")]
     [SerializeField] public Difficulty opponentDifficulty = Difficulty.Medium;
+
+    [Header("Skill (0=pushover, 1=sharp) — continuous, curriculum-ramped via SetSkill()")]
+    [Tooltip("Orthogonal to speed. Blends hesitation, ball-interception lead, and shot " +
+             "aim precision. Defaults from opponentDifficulty; overridden at runtime by " +
+             "RobotAgent's 'opponent_skill' curriculum parameter, if present.")]
+    [SerializeField, Range(0f, 1f)] private float skillLevel = 0.5f;
 
     [Header("Colour feedback (optional — assign a Renderer child)")]
     [SerializeField] private Renderer bodyRenderer;
@@ -64,13 +100,24 @@ public class ScriptedOpponent : MonoBehaviour
     //  CONSTANTS
     // =========================================================================
 
-    // This array stores pause chance
-    private static readonly float[] HESITATION_CHANCE = { 0.40f, 0.25f, 0.10f };
+    // Continuous skill blending ranges (replaces the old fixed 3-value arrays).
+    private const float HESITATION_MAX = 0.45f;   // skill = 0
+    private const float HESITATION_MIN = 0.05f;   // skill = 1
+    private const float LEAD_TIME_MAX = 0.45f;   // seconds of ball-velocity lookahead at skill = 1
+    private const float AIM_JITTER_MAX = 0.22f;   // metres of lateral shot jitter at skill = 0
 
-    // Speed multiplier per difficulty
+    // Default skill baseline per difficulty tier, used when nothing has called
+    // SetSkill() yet (e.g. manual Play-mode testing without a curriculum).
+    private static readonly float[] DEFAULT_SKILL_BY_DIFFICULTY = { 0.15f, 0.50f, 0.85f };
+
+    // Speed multiplier per difficulty (unchanged mechanic — orthogonal to skill)
     private static readonly float[] SPEED_MULT = { 0.70f, 1.00f, 1.30f };
     private float _speedMul = 1f;
     public void SetSpeedMultiplier(float m) { _speedMul = Mathf.Max(0.1f, m); }
+
+    // Continuous skill setter — called by RobotAgent's opponent_skill curriculum.
+    // Clamped defensively since a bad/missing curriculum value must never crash training.
+    public void SetSkill(float s) { skillLevel = Mathf.Clamp01(s); }
 
     // Wait after scoring (seconds)
     private const float COOLDOWN_DURATION = 1.2f;
@@ -90,6 +137,7 @@ public class ScriptedOpponent : MonoBehaviour
     private bool hasBall = false;
     private float cooldownTimer = 0f; // Counts waiting time
     private bool hesitatingNow = false;   // Stores whether robot pauses this frame
+    private Vector3 aimJitterOffset = Vector3.zero;   // rolled once per possession (see PickUp)
 
     // =========================================================================
     //  PUBLIC API  (read by MatchManager)
@@ -109,6 +157,9 @@ public class ScriptedOpponent : MonoBehaviour
         rb.constraints = RigidbodyConstraints.FreezeRotationX
                        | RigidbodyConstraints.FreezeRotationZ
                        | RigidbodyConstraints.FreezePositionY;
+        // Seed skill from the difficulty tier so manual testing without a
+        // curriculum still gets a sensible default (curriculum overrides via SetSkill).
+        skillLevel = DEFAULT_SKILL_BY_DIFFICULTY[(int)opponentDifficulty];
     }
 
     private void Start()
@@ -121,8 +172,8 @@ public class ScriptedOpponent : MonoBehaviour
     {
         if (ballA == null || ballB == null)
             Debug.LogError("[ScriptedOpponent] BallA or BallB not assigned.");
-        if (scoringGoal == null)
-            Debug.LogError("[ScriptedOpponent] scoringGoal not assigned. " +
+        if (targetGoal == null)
+            Debug.LogError("[ScriptedOpponent] targetGoal not assigned. " +
                            "Drag OwnGoal (the AI's defended goal) here.");
         if (arenaRoot == null)
         {
@@ -159,9 +210,10 @@ public class ScriptedOpponent : MonoBehaviour
         if (target == null) return;
 
         if (!hesitatingNow)
-            MoveToward(target.position);
+            MoveToward(InterceptPoint(target));
 
-        // Pickup check (if close enuogh, pick ball)
+        // Pickup check (if close enuogh, pick ball) — always against the ball's REAL
+        // position, never the predicted point (prediction only steers movement).
         float dist = Vector3.Distance(transform.position, target.position);
         if (dist < pickupDistance)
         {
@@ -169,17 +221,31 @@ public class ScriptedOpponent : MonoBehaviour
         }
     }
 
+    // Predicted lead point for the ball, blended by skill. At skill=0 this is
+    // just the ball's current position (old behaviour, chases where it IS);
+    // at skill=1 it leads by up to LEAD_TIME_MAX seconds of current velocity,
+    // so a sharp opponent cuts off a moving ball instead of trailing it.
+    private Vector3 InterceptPoint(Transform ballTf)
+    {
+        var ballRb = ballTf.GetComponent<Rigidbody>();
+        if (ballRb == null) return ballTf.position;
+        float leadTime = LEAD_TIME_MAX * skillLevel;
+        Vector3 predicted = ballTf.position + ballRb.linearVelocity * leadTime;
+        predicted.y = ballTf.position.y;
+        return predicted;
+    }
+
     // ── State: CarryBall ─────────────────────────────────────────────────────
 
     private void TickCarry()
     {
-        if (scoringGoal == null) return;
+        if (targetGoal == null) return;
 
         if (!hesitatingNow)
-            MoveToward(scoringGoal.position);
+            MoveToward(targetGoal.position + aimJitterOffset);
 
-        // Score check
-        float dist = Vector3.Distance(transform.position, scoringGoal.position);
+        // Score check — against the REAL goal position, jitter only steers aim.
+        float dist = Vector3.Distance(transform.position, targetGoal.position);
         if (dist < goalDistance)
         {
             Score();
@@ -212,10 +278,16 @@ public class ScriptedOpponent : MonoBehaviour
         // forcing the AI to either go for the other ball or defend.
         carriedBall.gameObject.SetActive(false);
 
+        // Roll this possession's aim jitter ONCE (not per-frame — a jittery
+        // target every physics step looks twitchy and doesn't teach anything).
+        // Shrinks to ~0 as skill approaches 1 (Lerp naturally handles skill=1 => 0).
+        float jitterMag = Mathf.Lerp(AIM_JITTER_MAX, 0f, skillLevel);
+        Vector3 lateral = Vector3.Cross(Vector3.up, (targetGoal != null
+            ? (targetGoal.position - transform.position).normalized : transform.forward));
+        aimJitterOffset = lateral * Random.Range(-jitterMag, jitterMag);
+
         state = State.CarryBall;
         SetColour(C_CARRY);
-
-        Debug.Log("[ScriptedOpponent] Picked up ball.");
     }
 
     private void Score()
@@ -243,8 +315,6 @@ public class ScriptedOpponent : MonoBehaviour
         state = State.Cooldown;
         cooldownTimer = COOLDOWN_DURATION;
         SetColour(C_COOL);
-
-        Debug.Log("[ScriptedOpponent] Scored!");
     }
 
     // =========================================================================
@@ -317,7 +387,7 @@ public class ScriptedOpponent : MonoBehaviour
         return new Vector3(0f, y, 0f);
     }
 
-    private float HesitationChance() => HESITATION_CHANCE[(int)opponentDifficulty]; // Returns hesitation based on difficulty
+    private float HesitationChance() => Mathf.Lerp(HESITATION_MAX, HESITATION_MIN, skillLevel);
     private float SpeedMult() => SPEED_MULT[(int)opponentDifficulty] * _speedMul;
 
     private void SetColour(Color c)
@@ -337,11 +407,13 @@ public class ScriptedOpponent : MonoBehaviour
         Gizmos.color = new Color(1f, 0.5f, 0f, 0.3f);
         Gizmos.DrawSphere(transform.position, pickupDistance);
 
-        // Goal range (shown at scoring goal position)
-        if (scoringGoal != null)
+        // Goal range (shown at target-goal position) — labelled so it's unmistakable
+        // in the Scene view which goal this opponent is driving toward.
+        if (targetGoal != null)
         {
             Gizmos.color = new Color(0.8f, 0.1f, 0.1f, 0.3f);
-            Gizmos.DrawSphere(scoringGoal.position, goalDistance);
+            Gizmos.DrawSphere(targetGoal.position, goalDistance);
+            UnityEditor.Handles.Label(targetGoal.position + Vector3.up * 0.1f, "opponent scores here");
         }
     }
 #endif

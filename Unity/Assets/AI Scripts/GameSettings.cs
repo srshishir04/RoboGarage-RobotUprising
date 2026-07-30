@@ -17,9 +17,9 @@ public static class GameSettings
     // enum -> a list of fixed choice -> we can write "Difficulty = TrainingMode.Easy" ; "Match = MatchMode.OneVOne" later
     public enum TrainingMode
     {
-        Easy = 0,   // 14-float obs, no opponent awareness
-        Medium = 1,   // 19-float obs, opponent position + heading + has_ball
-        Hard = 2,   // 24-float obs, + opponent goal + role flag + opp dist
+        Easy = 0,   // 1v1: 13-float obs, no opponent awareness. 2v2: always 26 (see ObsSize).
+        Medium = 1,   // 1v1: 19-float obs, opponent position + heading + has_ball
+        Hard = 2,   // 1v1: 24-float obs, + opponent goal + role flag + opp dist
     }
 
     public enum MatchMode
@@ -41,9 +41,13 @@ public static class GameSettings
     // Human-controlled opponent (future use).
     public static string OpponentOnnxFileName = "";
 
-    // Total number of observation values sent to the AI brain
-    // Changes automatically based on difficulty
-    public static int ObsSize => DeriveObsSize(Difficulty); // => means automatically calculate this value
+    // Total number of observation values sent to the AI brain.
+    // Changes automatically based on difficulty AND match mode — 2v2 uses ONE
+    // fixed 26-float team contract regardless of difficulty (RobotAgent's
+    // CollectTeamObservations never branches on trainingMode); only 1v1 varies
+    // by difficulty. Previously this ignored Match entirely, which would have
+    // silently sent a 13/19/24-float vector to a 26-float 2v2 brain.
+    public static int ObsSize => DeriveObsSize(Match, Difficulty);
 
     // Robots per team -
     // Automatically derived from MatchMode. MatchManager.cs and coordinator.py both read this.
@@ -98,8 +102,11 @@ public static class GameSettings
     }
 
     //  PRIVATE HELPERS - only this class can use this
-    private static int DeriveObsSize(TrainingMode d)
+    private const int TEAM_OBS_SIZE = 26;   // 2v2 — fixed, matches RobotAgent.CollectTeamObservations
+
+    private static int DeriveObsSize(MatchMode m, TrainingMode d)
     {
+        if (m == MatchMode.TwoVTwo) return TEAM_OBS_SIZE;
         switch (d) // check multiple possible values
         {
             case TrainingMode.Medium: return 19;

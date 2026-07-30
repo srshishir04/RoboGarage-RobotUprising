@@ -1,0 +1,162 @@
+# =============================================================================
+# Ra_2v2.yaml — ML-Agents PPO config for RobotAgent.cs  (teamMode = true)
+# -----------------------------------------------------------------------------
+# ONE shared-policy behavior for BOTH AI robots on the team. Obs size 26 (see
+# CollectTeamObservations in RobotAgent.cs). Action space: 4 discrete {S,F,L,R}.
+# Reward is the existing Medium-style per-robot shaping (approach/face-ball/
+# ball-progress/push-align/idle-stop/wall/spin/step-cost/anti-stuck), unchanged.
+#
+# CHANGED vs the previous Ra_2v2.yaml:
+#   • Score/concede is now a SOFT team-kickoff (AddGroupReward + reset both AI
+#     robots/both opponents/the ball, episode keeps running to MaxStep) instead
+#     of a hard EndGroupEpisode. Same density rationale as the 1v1 Kickoff()
+#     change: far more score cycles per episode. time_horizon/buffer_size below
+#     were already sized for long multi-goal episodes (matches Hard's 256/40960)
+#     so this needed no numeric change, only the behavioural note.
+#   • Added `opponent_skill`, applied identically to BOTH opponent1 and
+#     opponent2 (RobotAgent.ApplyOpponentSkillCurriculum pushes the same value
+#     to both). See Ra_medium.yaml for the mechanism.
+#   • Observations are now egocentric (rotated into each robot's own facing
+#     frame) with obs[2-3] carrying self-velocity instead of raw heading — see
+#     RobotAgent.cs header. Obs SIZE is unchanged at 26.
+#
+# THIS ONE FILE COVERS EASY / MEDIUM / HARD. Unlike 1v1, difficulty is NOT
+# selected here — RobotAgent's 2v2 code path never branches on trainingMode.
+# Difficulty comes entirely from each ScriptedOpponent's `opponentDifficulty`
+# (speed tier) and skillLevel/opponent_skill (smarts) — see below.
+# To train a specific 2v2 difficulty: set opponentDifficulty on BOTH opponent
+# GameObjects in the scene/prefab, then run with a difficulty-tagged --run-id.
+#
+# MUST MATCH UNITY (verify before launch — a Space Size mismatch silently
+# produces a garbage policy / near-constant action histogram):
+#   • Behavior Parameters -> Behavior Name        = RobotAgentTeam  (key below —
+#         DIFFERENT from 1v1's "RobotAgent" so the brains don't collide)
+#   • Behavior Parameters -> Vector Obs Space     = 26   (UNCHANGED size; slot
+#         meanings changed — do not resume an old 2v2 checkpoint onto this,
+#         there wasn't a working one anyway per the compatibility audit)
+#   • Behavior Parameters -> Discrete Branch 0    = 4
+#   • BOTH AI robots use the SAME Behavior Name above (that's what makes this
+#         one shared policy instead of two independent ones)
+#   • RobotAgent.teamMode                          = true   (on BOTH AI robots)
+#   • RobotAgent.teammate                          = the OTHER AI robot (mirrored
+#         on both — A.teammate = B, B.teammate = A)
+#   • RobotAgent.opponent  (= opponent1)           = assigned, on BOTH AI robots
+#   • RobotAgent.opponent2                         = assigned, on BOTH AI robots
+#   • RobotAgent.ownGoal                           = ASSIGNED on BOTH AI robots
+#         (concede detection silently never fires without it — Initialize() logs
+#         a warning if missing in teamMode)
+#   • Opponent1/opponent2 order is FIXED (never sorted by distance) — must match
+#         brain_runner.py's marker-ID convention (opponent1 = lower ID)
+#   • On each ScriptedOpponent: ball / targetGoal (renamed from scoringGoal —
+#         migrates automatically) / arenaRoot assigned, opponentDifficulty set,
+#         baseSpeed sanity-checked against the 0.60 m/s agent for THAT
+#         difficulty (see speed note below)
+#   • Agent (Inspector) -> Max Step                ~ 4000  (episode cap; most
+#         episodes now run to this cap given the soft team-kickoff, rather than
+#         ending on the first goal)
+#
+# -- OPPONENT-SPEED CAUTION (read before picking opponentDifficulty) ----------
+# ScriptedOpponent's effective speed = baseSpeed * SPEED_MULT[difficulty] *
+# opponent_speed(curriculum below). SPEED_MULT is 0.70/1.00/1.30 for Easy/
+# Medium/Hard. The curriculum ceiling below (1.0) was chosen as a moderate,
+# NOT independently re-verified, default — it has NOT been checked against the
+# agent's calibrated 0.60 m/s top speed for all three difficulty tiers the way
+# Ra_hard.yaml's 1v1 ceiling was (that one was recalibrated after the opponent
+# came out ~3.5x faster than the agent with the old defaults). Before a real
+# 2v2 Hard run in particular, do the same ratio check: baseSpeed * 1.30 *
+# (this ceiling) vs 0.60 m/s, and lower baseSpeed and/or the ceiling if the
+# opponent is effectively uncatchable.
+#
+# Run (tag run-id with the difficulty you wired into the scene):
+#   mlagents-learn Ra_2v2.yaml --run-id=team_easy_v2_egocentric --force
+#   mlagents-learn Ra_2v2.yaml --run-id=team_medium_v2_egocentric --force
+#   mlagents-learn Ra_2v2.yaml --run-id=team_hard_v2_egocentric --force
+#   (fresh run-id every time, never --resume onto a differently-configured run)
+# =============================================================================
+
+behaviors:
+  RobotAgentTeam:
+    trainer_type: ppo
+
+    hyperparameters:
+      batch_size: 2048          # multi-agent play is higher variance, like 1v1 Hard
+      buffer_size: 40960
+      learning_rate: 3.0e-4
+      learning_rate_schedule: linear
+      beta: 5.0e-3
+      beta_schedule: linear
+      epsilon: 0.2
+      epsilon_schedule: linear
+      lambd: 0.95
+      num_epoch: 3
+
+    network_settings:
+      normalize: true
+      hidden_units: 512         # extra capacity for teammate + 2 opponents in obs
+      num_layers: 2
+      vis_encode_type: simple
+
+    reward_signals:
+      extrinsic:
+        gamma: 0.995            # long credit chain: approach -> control -> score
+        strength: 1.0
+
+    keep_checkpoints: 10
+    checkpoint_interval: 500000
+    # Ceiling, not a target — 2v2 is at least as hard as 1v1 Hard (coordination +
+    # denser episodes now that goals soft-kickoff instead of ending the episode).
+    # Watch the reward curve and stop at the plateau; if you shorten this, the
+    # progress-gated curriculum below compresses with it.
+    max_steps: 25000000
+    time_horizon: 256
+    summary_freq: 50000
+    threaded: true
+
+# -----------------------------------------------------------------------------
+# Environment parameters read by RobotAgent.OnEpisodeBegin() / OnEpisodeBeginTeam()
+# -----------------------------------------------------------------------------
+environment_parameters:
+
+  ball_spawn_radius:
+    sampler_type: uniform
+    sampler_parameters:
+      min_value: 0.5
+      max_value: 1.0
+
+  # Sim-to-real pinned value. The C# must read the key "control_distance"; if the
+  # key name differs, this is silently ignored and the Inspector's 0.20 is used.
+  control_distance: 0.2
+
+  # Progress-gated (fraction of max_steps), NOT reward-gated — avoids the
+  # threshold-stall seen on 1v1 Easy. Ceiling capped at 1.0 (not 1.3+) precisely
+  # because of the opponent-speed caution above — raise it only after you've
+  # checked the effective-speed ratio for whichever opponentDifficulty is wired
+  # into this run. At max_steps=25M: warmup->full at 8.25M.
+  opponent_speed:
+    curriculum:
+      - name: warmup
+        completion_criteria:
+          measure: progress
+          behavior: RobotAgentTeam
+          min_lesson_length: 100
+          threshold: 0.33
+        value: 0.7
+      - name: full
+        value: 1.0
+
+  # NEW: opponent SKILL, applied identically to opponent1 AND opponent2 (see
+  # RobotAgent.ApplyOpponentSkillCurriculum). Same mechanism as 1v1 — see
+  # Ra_medium.yaml. Ceiling kept moderate (0.8) rather than Hard's 0.95: two
+  # skilled+coordinated-by-proxy opponents already raise difficulty a lot
+  # faster than one, since there's no explicit opponent-teamwork code to offset.
+  opponent_skill:
+    curriculum:
+      - name: warmup
+        completion_criteria:
+          measure: progress
+          behavior: RobotAgentTeam
+          min_lesson_length: 100
+          threshold: 0.33
+        value: 0.4
+      - name: full
+        value: 0.8
