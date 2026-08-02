@@ -1,5 +1,5 @@
 # =============================================================================
-# Ra_2v2.yaml — ML-Agents PPO config for RobotAgent.cs  (teamMode = true)
+# Ra_2v2.yaml — ML-Agents POCA config for RobotAgent.cs  (teamMode = true)
 # -----------------------------------------------------------------------------
 # ONE shared-policy behavior for BOTH AI robots on the team. Obs size 26 (see
 # CollectTeamObservations in RobotAgent.cs). Action space: 4 discrete {S,F,L,R}.
@@ -19,6 +19,16 @@
 #   • Observations are now egocentric (rotated into each robot's own facing
 #     frame) with obs[2-3] carrying self-velocity instead of raw heading — see
 #     RobotAgent.cs header. Obs SIZE is unchanged at 26.
+#   • FIXED: trainer_type was wrongly `ppo` in the previous version of this
+#     file. RobotAgent.cs's team-mode code calls TeamGroup.AddGroupReward() via
+#     a SimpleMultiAgentGroup — that's ML-Agents' multi-agent credit-assignment
+#     API, which needs the POCA trainer (MA-POCA: has a centralized critic that
+#     properly attributes a shared reward across the two teammates). PPO has no
+#     such mechanism; it still runs but silently folds the group reward into
+#     each agent's individual stream with no real credit assignment, and prints
+#     "received a group reward but you are not using a multi-agent trainer" at
+#     startup. trainer_type is now `poca` — same hyperparameter schema as PPO,
+#     just a different trainer_type value, nothing else below needed to change.
 #
 # THIS ONE FILE COVERS EASY / MEDIUM / HARD. Unlike 1v1, difficulty is NOT
 # selected here — RobotAgent's 2v2 code path never branches on trainingMode.
@@ -76,7 +86,7 @@
 
 behaviors:
   RobotAgentTeam:
-    trainer_type: ppo
+    trainer_type: poca
 
     hyperparameters:
       batch_size: 2048          # multi-agent play is higher variance, like 1v1 Hard
