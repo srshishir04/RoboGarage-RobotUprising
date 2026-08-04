@@ -63,43 +63,57 @@ mismatch — so a wrong/untrained brain fails loudly at match start, not mid-mat
 To wire in a freshly-trained brain: rename it to match the convention above and drop it in this
 folder, replacing the old file. No code changes needed for 1v1. **For 2v2, see the gap below.**
 
-## 2v2 observations — fixed, verified against real brains
+## Observations — egocentric contract implemented for both 1v1 and 2v2
 
 `Unity/CHANGES.md` documents a `RobotAgent.cs` redesign: every relative observation is now
 expressed in the robot's own facing frame (forward-component, right-component, distance)
-instead of raw world axes, and 2v2 uses a fixed 26-float team contract
-(`CollectTeamObservations`) with its own self-velocity/yaw-rate slots. This runtime now
-implements that contract for 2v2:
+instead of raw world axes, self forward-speed/yaw-rate replace raw heading, and 2v2 uses its own
+fixed 26-float team contract (`CollectTeamObservations`). This runtime now implements that
+contract on both paths:
 
-- `build_team_observations()` mirrors `CollectTeamObservations`'s exact 26-slot layout —
-  own pos, own fwd-speed/yaw-rate, ball (egocentric) + velocity, scoring goal, own goal,
-  in-control, teammate (egocentric), am-I-nearest-the-ball, opponent1 + opponent2 (egocentric,
-  fixed order — never sorted by distance).
-- `_ego_project()` does the actual forward/right rotation, mirroring `RobotAgent.cs`'s
-  `EgoRel()`/`EgoVec()` — every value was hand-verified against the Unity-side formula with a
-  synthetic observation before trusting it against a real brain.
-- Own forward-speed/yaw-rate (config's new `ROBOT_VEL_SCALE`/`YAW_RATE_SCALE`, matching
+- `build_team_observations()` (2v2) and `build_observations()` (1v1) both mirror their Unity
+  counterparts slot-for-slot via a shared `_ego_project()` rotation helper (mirrors
+  `RobotAgent.cs`'s `EgoRel()`/`EgoVec()`).
+- **1v1's opponent-facing slots (Medium+) needed a second, distinct fix**, not just the same
+  rotation applied twice: `RobotAgent.cs` projects the *opponent's own heading* onto *my* frame
+  (`EgoVec(opponent.forward)`), not the opponent's raw world heading — a direction-vector
+  rotation, not a position-relative one. Confirmed via full field-by-field comparison against
+  `CollectObservations()`, not assumed from the size match alone.
+- Own forward-speed/yaw-rate (config's `ROBOT_VEL_SCALE`/`YAW_RATE_SCALE`, matching
   `RobotAgent.cs`'s `robotVelScale`/`yawRateScale`) come from frame-to-frame differencing of the
   robot's own ArUco-tracked center + heading in `_run_match` — the same technique already used
-  for `ball_vel_ms`, just applied to the robot itself.
+  for `ball_vel_ms`, now shared by both 1v1 and 2v2 per-robot loops.
 - `EXPECTED_OBS`/`obs_size` lookup is mode-aware (`TEAM_OBS_SIZE = 26` for `mode == "2v2"`,
   regardless of difficulty).
 
-**Verified, not just written:** loaded all three 2v2 brains (`2v2_easy/medium/hard.onnx`) with
-`onnxruntime` and ran real inference against a `build_team_observations()` output — all three
-load and return valid actions with no shape mismatch. The 1v1 path (`build_observations()`) is
-untouched and still returns correct-shaped 13/19/24-float vectors.
+**Verified via real inference, not just code review:** hand-derived a synthetic observation for
+each of `build_observations()` and `build_team_observations()` and checked every value against
+manual trigonometry — exact match on all 24 and all 26 slots respectively. Then ran a
+heading-invariance sweep (identical relative ball geometry at 8 different absolute robot
+headings — a correctly-egocentric pipeline must produce the same action regardless of absolute
+heading) and a multi-step dynamic simulation (robot actually moves under its own chosen actions
+across several ticks) for all six brains. Before the 1v1 fix, all three 1v1 brains span in
+place indefinitely from most starting headings, with zero net progress toward the ball — a
+direct reproduction of the original heading-generalization bug. After the fix, all three
+converge to the ball consistently regardless of starting heading.
 
-## Known gap: 1v1 still uses the old (non-egocentric) observation format
+**2v2 close-range approach still shows a stall/oscillation just outside control distance** in
+this same multi-step testing (persists across 200 simulated steps, with or without a ball-push
+physics model) — the observation math itself is verified correct, so this is either a genuine
+trained-policy characteristic at that specific range, or an artifact of this test harness's
+approximated turn rate (the real turn rate is itself an open calibration TODO in `RobotAgent.cs`
+— see `Unity/README.md`'s known limitations). Not resolved from testing alone; would need a
+live Unity/hardware test to pin down further.
 
-`build_observations()` (1v1 only) was **not** touched by the above — it still computes
-plain world-axis-aligned relative vectors and raw heading in slots `[2-3]`, not the
-egocentric-rotation + self-velocity contract `RobotAgent.cs` now uses. Since the 1v1 brains
-were retrained under the new contract too, this is the same class of bug as 2v2 had, scoped down
-to 1v1 — it won't crash (obs sizes 13/19/24 are unchanged) but silently feeds the wrong format.
-If you want this closed out the same way, the fix is the same shape: rotate `rel()`'s output via
-`_ego_project()` and replace the raw-heading `[2-3]` slots with self fwd-speed/yaw-rate (the
-per-robot motion tracking added for 2v2 in `_run_match` can be reused for the single 1v1 robot).
+**Opponent1/opponent2 marker-ID mapping**: `brain_runner.py` maps ArUco marker 3 → opponent1,
+marker 4 → opponent2, consistently for both AI robots. 2v2 training happens in pure Unity
+simulation, which has no concept of real marker IDs, so there's no training-time "ground truth"
+this needs to match — any consistent convention is valid. The only place a mapping-order
+asymmetry could have mattered was `RobotAgent.cs`'s `R_STEAL` reward only checking `opponent`
+(not `opponent2`) during training — fixed (`AnyOpponentInControl()`, see `Unity/CHANGES.md`) so
+future retraining is unaffected by opponent1-vs-opponent2 assignment order. This fix is
+reward-shaping only; it doesn't touch the observation vector or inference, so the six current
+brains are unaffected either way.
 
 ## ESP32 firmware
 

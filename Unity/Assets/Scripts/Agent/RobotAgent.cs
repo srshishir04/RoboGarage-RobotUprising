@@ -232,6 +232,7 @@ public class RobotAgent : Agent
     private Rigidbody ballRb;
     private Renderer agentRenderer;
     private RobotAgent opponentAgent;
+    private RobotAgent opponent2Agent;   // 2v2 only — mirrors opponentAgent for opponent2
 
     private bool inControl = false;
     private bool hadControlLast = false;
@@ -300,6 +301,7 @@ public class RobotAgent : Agent
         if (arenaRoot == null) arenaRoot = transform.parent;
         if (ball != null) ballRb = ball.GetComponent<Rigidbody>();
         if (opponent != null) opponentAgent = opponent.GetComponent<RobotAgent>();
+        if (opponent2 != null) opponent2Agent = opponent2.GetComponent<RobotAgent>();
 
         // Auto-find the ball kickoff point if not assigned in the Inspector.
         if (ballHome == null && arenaRoot != null)
@@ -776,13 +778,25 @@ public class RobotAgent : Agent
         return LocalDist(transform.localPosition, ip);
     }
 
-    private bool OpponentInControl()
+    // 1v1 only (Medium+ opponent-in-control observation slot, Hard role logic).
+    private bool OpponentInControl() => IsOpponentInControlOf(opponent, opponentAgent);
+
+    // 2v2 only — true if EITHER opponent currently has the ball. Used for
+    // R_STEAL so a steal is credited regardless of which physical opponent it
+    // was taken from (previously only opponent1 counted here — see
+    // CHANGES.md / ai_robot/README.md's "known limitation"). This also makes
+    // the opponent1-vs-opponent2 marker-ID assignment order harmless for this
+    // specific check, since both are now treated identically.
+    private bool AnyOpponentInControl() =>
+        IsOpponentInControlOf(opponent, opponentAgent) || IsOpponentInControlOf(opponent2, opponent2Agent);
+
+    private bool IsOpponentInControlOf(Transform opp, RobotAgent oppAgent)
     {
-        if (opponent == null || ball == null) return false;
-        if (opponentAgent != null) return opponentAgent.CurrentInControl;
-        var so = opponent.GetComponent<ScriptedOpponent>();
+        if (opp == null || ball == null) return false;
+        if (oppAgent != null) return oppAgent.CurrentInControl;
+        var so = opp.GetComponent<ScriptedOpponent>();
         if (so != null) return so.CurrentHasBall;
-        return LocalDist(opponent.localPosition, ball.localPosition) < controlDistance;
+        return LocalDist(opp.localPosition, ball.localPosition) < controlDistance;
     }
 
     // ── Heuristic (keyboard test) ────────────────────────────────────────────────
@@ -1094,9 +1108,9 @@ public class RobotAgent : Agent
     // own-goal-push/clearance shaping, no teammate reward, no spacing reward.
     // Score/concede: SOFT team-kickoff (see TeamScoreEvent), mirroring the 1v1
     // density win — NOT a hard EndGroupEpisode like the previous version.
-    // NOTE: R_STEAL/oppInControlLast below reuse OpponentInControl() UNCHANGED,
-    // which only tracks opponent1 — stealing the ball from opponent2 specifically
-    // is not detected as a "steal" (flagged limitation, not silently fixed here).
+    // R_STEAL/oppInControlLast below use AnyOpponentInControl() — checks BOTH
+    // opponent and opponent2, so a steal is credited regardless of which
+    // physical opponent had the ball (previously opponent1-only; fixed).
     private void OnActionReceivedTeam(ActionBuffers actions)
     {
         stepsSinceKickoff++;
@@ -1198,7 +1212,7 @@ public class RobotAgent : Agent
         }
 
         hadControlLast = inControl;
-        oppInControlLast = OpponentInControl();
+        oppInControlLast = AnyOpponentInControl();
     }
 
     // Single-owner guard for a mid-episode score/concede: both teammates'

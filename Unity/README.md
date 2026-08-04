@@ -164,22 +164,28 @@ manual-testing baseline; the YAML curriculum overrides it during training.
    were never committed back to this repo. To retrain 2v2, you'll need to redo this wiring
    yourself (add a second AI robot, set `teamMode = true`, wire `teammate`/`opponent2`/`ownGoal`
    on both, set Behavior Name to `RobotAgentTeam` on both).
-2. **`ai_robot/brain_runner.py`'s 1v1 path still uses the old (non-egocentric) observation
-   format.** `build_observations()` (1v1 only) still computes plain world-frame relative
-   vectors and raw heading, not the `RobotAgent.cs` rotation-into-robot-frame +
-   self-velocity/yaw-rate contract described in `CHANGES.md`. It won't crash — obs sizes
-   13/19/24 are unchanged — but silently feeds the wrong format to brains retrained under the
-   new contract. **2v2 had the same issue and is now fixed** (`build_team_observations()`,
-   verified against all three real 2v2 brains via `onnxruntime`) — see `ai_robot/README.md` for
-   what's left to do if you want 1v1 closed out the same way.
+2. ~~`ai_robot/brain_runner.py`'s 1v1 path used the old (non-egocentric) observation format.~~
+   **Fixed and verified**, same rigor as the 2v2 fix: hand-checked a synthetic observation
+   against manual trigonometry (exact match, including the opponent-facing-vs-position
+   distinction), then confirmed empirically — before the fix, a heading-invariance sweep and a
+   multi-step dynamic simulation showed all three 1v1 brains spinning in place indefinitely from
+   most starting headings (zero net progress toward the ball); after the fix, all three
+   converge to the ball consistently regardless of starting heading. See `ai_robot/README.md`
+   for the full before/after evidence.
+   **Separately, 2v2 shows a close-range stall** (oscillates just outside control distance,
+   persists over 200 simulated steps, unaffected by adding ball-push physics to the test) that
+   testing alone can't attribute to a tunable threshold vs. a genuine policy limitation vs. this
+   test harness's approximated (uncalibrated) turn rate — needs a live Unity/hardware test.
 3. **Turn-torque calibration is an open TODO** (`RobotAgent.cs`, `motorTorque`/`turnTorque`
    fields, ~line 116-124): the real robot's turn rate has not been re-measured at the firmware's
    current `TURN_SPEED=200` — the last real measurement was at `TURN_SPEED=220`. Don't change
    `turnTorque` without a fresh measurement; the code comment explains why torque isn't even the
    right lever past the WheelCollider's slip-dominated turning regime.
-4. **2v2 "steal" detection only tracks `opponent1`.** `OnActionReceivedTeam` reuses the 1v1
-   `OpponentInControl()` check unchanged, so stealing the ball specifically from `opponent2`
-   isn't detected as a steal event. Flagged in the code as a known gap, not silently patched.
+4. ~~2v2 "steal" detection only tracked `opponent1`.~~ **Fixed** — `OnActionReceivedTeam` now
+   uses `AnyOpponentInControl()`, which checks both `opponent` and `opponent2`. This also makes
+   the opponent1/opponent2 marker-ID assignment order harmless (see `ai_robot/README.md`'s note
+   on that). Reward-shaping only, no observation/inference change — doesn't affect the current
+   six brains, only future retraining.
 5. **The main-menu "N robots connected" pill is built but not wired in.** `ConnectionPillUI.cs`
    and its prefab were deleted in this cleanup pass — they were unreferenced anywhere in the
    scene, and `MainMenuUI.cs`'s own comment confirms there's no pre-match connection check
