@@ -164,14 +164,14 @@ manual-testing baseline; the YAML curriculum overrides it during training.
    were never committed back to this repo. To retrain 2v2, you'll need to redo this wiring
    yourself (add a second AI robot, set `teamMode = true`, wire `teammate`/`opponent2`/`ownGoal`
    on both, set Behavior Name to `RobotAgentTeam` on both).
-2. **`ai_robot/brain_runner.py` was never updated for the egocentric-observation redesign.**
-   `build_observations()` still computes plain world-frame relative vectors and raw heading,
-   not the `RobotAgent.cs` rotation-into-robot-frame + self-velocity/yaw-rate contract described
-   in `CHANGES.md`. Concretely: 2v2 will fail immediately and loudly (the brain-loading code
-   checks the ONNX's actual input size against what Python computes, and they won't match) —
-   but **1v1 will run without crashing while silently feeding the wrong observation format**,
-   since the *sizes* (13/19/24) didn't change even though the *meaning* of each slot did. See
-   `ai_robot/README.md` for the exact functions/values that need updating.
+2. **`ai_robot/brain_runner.py`'s 1v1 path still uses the old (non-egocentric) observation
+   format.** `build_observations()` (1v1 only) still computes plain world-frame relative
+   vectors and raw heading, not the `RobotAgent.cs` rotation-into-robot-frame +
+   self-velocity/yaw-rate contract described in `CHANGES.md`. It won't crash — obs sizes
+   13/19/24 are unchanged — but silently feeds the wrong format to brains retrained under the
+   new contract. **2v2 had the same issue and is now fixed** (`build_team_observations()`,
+   verified against all three real 2v2 brains via `onnxruntime`) — see `ai_robot/README.md` for
+   what's left to do if you want 1v1 closed out the same way.
 3. **Turn-torque calibration is an open TODO** (`RobotAgent.cs`, `motorTorque`/`turnTorque`
    fields, ~line 116-124): the real robot's turn rate has not been re-measured at the firmware's
    current `TURN_SPEED=200` — the last real measurement was at `TURN_SPEED=220`. Don't change

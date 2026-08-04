@@ -290,6 +290,9 @@ CONTROL_DIST_M     = 0.10    # ↔ controlDistance — ball "in control" within 
 CONTROL_FACING_DOT = 0.30    # ↔ controlFacingDot — ball must be in front (dot threshold)
 GOAL_RADIUS_M      = 0.20    # ↔ goalRadius — ball within this of a goal = scored
 VEL_SCALE          = 1.5     # ↔ velScale — m/s that maps to a ball-velocity obs of 1.0
+ROBOT_VEL_SCALE    = 0.60    # ↔ robotVelScale — m/s that maps to a self fwd-speed obs of 1.0
+YAW_RATE_SCALE     = 3.2     # ↔ yawRateScale — rad/s that maps to a self yaw-rate obs of 1.0
+                             # (2v2 team observations only — see build_team_observations)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 8. BRAIN

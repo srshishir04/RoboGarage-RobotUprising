@@ -63,39 +63,43 @@ mismatch — so a wrong/untrained brain fails loudly at match start, not mid-mat
 To wire in a freshly-trained brain: rename it to match the convention above and drop it in this
 folder, replacing the old file. No code changes needed for 1v1. **For 2v2, see the gap below.**
 
-## ⚠️ Known gap: this runtime doesn't match the current (egocentric) observation contract
+## 2v2 observations — fixed, verified against real brains
 
-`Unity/CHANGES.md` documents a RobotAgent.cs redesign — every relative observation (ball, goal,
-opponent, teammate) is now expressed in the robot's own facing frame (forward/right/distance)
-instead of raw world axes, and slots `[2-3]` now carry self-velocity + yaw-rate instead of raw
-heading. **This file was never updated to match.** Concretely, four things still need doing
-(none done yet):
+`Unity/CHANGES.md` documents a `RobotAgent.cs` redesign: every relative observation is now
+expressed in the robot's own facing frame (forward-component, right-component, distance)
+instead of raw world axes, and 2v2 uses a fixed 26-float team contract
+(`CollectTeamObservations`) with its own self-velocity/yaw-rate slots. This runtime now
+implements that contract for 2v2:
 
-1. **`build_observations()` must rotate every relative vector into the robot's frame.**
-   Currently `rel()` computes a plain world-axis-aligned `(dx, dz)` offset. It needs the same
-   rotation `RobotAgent.cs`'s `EgoRel()`/`EgoVec()` do: `(dx*sinθ + dz*cosθ, dx*cosθ - dz*sinθ)`
-   where `θ` is the robot's heading angle — giving (forward-component, right-component).
-   Applies to the ball, goal, and own-goal `rel()` calls, and to the opponent heading/velocity
-   terms.
-2. **Robot self-velocity tracking is new and doesn't exist yet.** Obs slots `[2-3]` need
-   forward-speed and yaw-rate (normalized by `robotVelScale = 0.60` and `yawRateScale = 3.2`
-   respectively — these live in `RobotAgent.cs`, not `config.py`, and aren't defined here at
-   all yet). The file already differences the *ball's* position frame-to-frame for
-   `ball_vel_ms` — the robot's own ArUco-tracked center/heading needs the identical treatment.
-3. **`EXPECTED_OBS` must become mode-aware.** It's currently `{"easy": 13, "medium": 19, "hard":
-   24}`, and the call site (`obs_size = EXPECTED_OBS.get(difficulty, 13)`) ignores `mode`
-   entirely. For `mode == "2v2"`, `obs_size` must be `26` regardless of difficulty — matching
-   `GameSettings.ObsSize` on the Unity side.
-4. **`build_team_observations()` doesn't exist.** There is currently no 2v2-shaped observation
-   builder at all. It needs to mirror `RobotAgent.cs`'s `CollectTeamObservations`'s exact
-   26-slot order (including teammate + fixed opponent1/opponent2 ordering).
+- `build_team_observations()` mirrors `CollectTeamObservations`'s exact 26-slot layout —
+  own pos, own fwd-speed/yaw-rate, ball (egocentric) + velocity, scoring goal, own goal,
+  in-control, teammate (egocentric), am-I-nearest-the-ball, opponent1 + opponent2 (egocentric,
+  fixed order — never sorted by distance).
+- `_ego_project()` does the actual forward/right rotation, mirroring `RobotAgent.cs`'s
+  `EgoRel()`/`EgoVec()` — every value was hand-verified against the Unity-side formula with a
+  synthetic observation before trusting it against a real brain.
+- Own forward-speed/yaw-rate (config's new `ROBOT_VEL_SCALE`/`YAW_RATE_SCALE`, matching
+  `RobotAgent.cs`'s `robotVelScale`/`yawRateScale`) come from frame-to-frame differencing of the
+  robot's own ArUco-tracked center + heading in `_run_match` — the same technique already used
+  for `ball_vel_ms`, just applied to the robot itself.
+- `EXPECTED_OBS`/`obs_size` lookup is mode-aware (`TEAM_OBS_SIZE = 26` for `mode == "2v2"`,
+  regardless of difficulty).
 
-**Practical effect:** loading a 2v2 brain fails immediately and loudly (`Brain.__init__`'s size
-check catches the 13/19/24-vs-26 mismatch). **1v1 loads and runs without crashing** — sizes are
-unchanged — **but silently feeds the wrong observation format** to a brain trained on the new
-egocentric contract, since nothing here checks *meaning*, only *size*. If real-robot behavior
-looks subtly wrong (turns the "obvious" wrong way in some headings, etc.) after the brains were
-retrained, this is almost certainly why.
+**Verified, not just written:** loaded all three 2v2 brains (`2v2_easy/medium/hard.onnx`) with
+`onnxruntime` and ran real inference against a `build_team_observations()` output — all three
+load and return valid actions with no shape mismatch. The 1v1 path (`build_observations()`) is
+untouched and still returns correct-shaped 13/19/24-float vectors.
+
+## Known gap: 1v1 still uses the old (non-egocentric) observation format
+
+`build_observations()` (1v1 only) was **not** touched by the above — it still computes
+plain world-axis-aligned relative vectors and raw heading in slots `[2-3]`, not the
+egocentric-rotation + self-velocity contract `RobotAgent.cs` now uses. Since the 1v1 brains
+were retrained under the new contract too, this is the same class of bug as 2v2 had, scoped down
+to 1v1 — it won't crash (obs sizes 13/19/24 are unchanged) but silently feeds the wrong format.
+If you want this closed out the same way, the fix is the same shape: rotate `rel()`'s output via
+`_ego_project()` and replace the raw-heading `[2-3]` slots with self fwd-speed/yaw-rate (the
+per-robot motion tracking added for 2v2 in `_run_match` can be reused for the single 1v1 robot).
 
 ## ESP32 firmware
 

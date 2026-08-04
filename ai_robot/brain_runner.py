@@ -55,14 +55,19 @@ for _stream in (sys.stdout, sys.stderr):
 # ── Redesign constants (config overrides if present) ─────────────────────────
 ARENA_HALF_M       = getattr(C, "ARENA_HALF_M", 0.75)
 VEL_SCALE          = getattr(C, "VEL_SCALE", 1.5)
+ROBOT_VEL_SCALE    = getattr(C, "ROBOT_VEL_SCALE", 0.60)
+YAW_RATE_SCALE     = getattr(C, "YAW_RATE_SCALE", 3.2)
 CONTROL_DIST_M     = getattr(C, "CONTROL_DIST_M", 0.18)
 CONTROL_FACING_DOT = getattr(C, "CONTROL_FACING_DOT", 0.30)
 GOAL_RADIUS_M      = getattr(C, "GOAL_RADIUS_M", 0.20)
 SCORE_COOLDOWN_S   = 3.0
 GOAL_PAUSE_S       = getattr(C, "GOAL_PAUSE_S", 6.0)   # robot stops this long after a goal for repositioning
 
-# Authoritative obs widths per difficulty (matches RobotAgent.cs)
+# Authoritative obs widths per difficulty (matches RobotAgent.cs). 2v2 is a
+# fixed 26-float team contract regardless of difficulty — see EXPECTED_OBS's
+# call site in brain_thread_fn and build_team_observations() below.
 EXPECTED_OBS = {"easy": 13, "medium": 19, "hard": 24}
+TEAM_OBS_SIZE = 26
 
 # =====================================================================
 # GLOBAL MATCH STATE
@@ -482,6 +487,68 @@ def build_observations(rc, heading, ball_pos, ball_vel_ms, in_control,
             obs.append(_clamp(bog, 0.0, 2.0))                             # [23]
         else:
             obs.append(2.0)
+
+    return np.array([obs], dtype=np.float32)
+
+def _ego_project(dx, dz, hx, hz):
+    """Rotate a canonical world-frame 2D vector (dx, dz) into the robot's own
+    facing frame, given its canonical unit heading (hx, hz). Mirrors
+    RobotAgent.cs's EgoRel()/EgoVec() exactly: returns (forward-component,
+    right-component). (hx, hz) must already have MIRROR_X/Z_FLIP applied —
+    see build_team_observations."""
+    return dx * hx + dz * hz, dx * hz - dz * hx
+
+def build_team_observations(rc, heading, own_fwd_speed_ms, own_yaw_rate,
+                             ball_pos, ball_vel_ms, in_control,
+                             goal_center, owngoal_center,
+                             teammate_pos, am_nearest,
+                             opp1_pos, opp2_pos):
+    """2v2 team-mode observation contract (26 floats) — mirrors RobotAgent.cs's
+    CollectTeamObservations() slot-for-slot (see Unity/CHANGES.md). Every
+    relative vector is egocentric (forward-component, right-component,
+    distance) via _ego_project, instead of the raw world-axis deltas
+    build_observations() uses for 1v1. A None position (marker not currently
+    tracked) yields (0, 0, 0) for that slot, matching RobotAgent.cs's
+    null-target fallback in EgoRel()."""
+    n, cx, cy = _frame_scale()
+    rx, rz = rc
+    mx = -1.0 if getattr(C, "MIRROR_X", False) else 1.0
+    zf = -1.0 if getattr(C, "Z_FLIP", True) else 1.0
+
+    # Canonical (mirror/flip-corrected) unit heading — same convention as the
+    # "mx * fwd_x, fwd_z" heading already used in build_observations().
+    hx, hz = mx * heading[0], heading[1]
+
+    def ego_rel(t):
+        if t is None:
+            return 0.0, 0.0, 0.0
+        dx, dz = mx * (t[0] - rx) / n, zf * (t[1] - rz) / n
+        fwd, right = _ego_project(dx, dz, hx, hz)
+        return _clamp(fwd), _clamp(right), _clamp(math.hypot(dx, dz), 0.0, 2.0)
+
+    obs = [
+        _clamp(mx * (rx - cx) / n), _clamp(zf * (rz - cy) / n),          # [0-1] own pos
+        _clamp(own_fwd_speed_ms / ROBOT_VEL_SCALE),                       # [2] own fwd speed
+        _clamp(own_yaw_rate / YAW_RATE_SCALE),                           # [3] own yaw rate
+    ]
+
+    brx, brz, bd = ego_rel(ball_pos)
+    obs += [brx, brz, bd]                                                # [4-6] ball, egocentric
+
+    vx, vz = mx * ball_vel_ms[0] / VEL_SCALE, zf * ball_vel_ms[1] / VEL_SCALE
+    vfwd, vright = _ego_project(vx, vz, hx, hz)
+    obs += [_clamp(vfwd), _clamp(vright)]                                 # [7-8] ball velocity, egocentric
+
+    obs += list(ego_rel(goal_center))                                    # [9-11] scoring goal, egocentric
+    obs += list(ego_rel(owngoal_center))                                 # [12-14] own goal, egocentric
+
+    obs.append(1.0 if in_control else 0.0)                               # [15] self in-control
+
+    obs += list(ego_rel(teammate_pos))                                   # [16-18] teammate, egocentric
+    obs.append(1.0 if am_nearest else 0.0)                               # [19] am-I-nearest-the-ball
+
+    obs += list(ego_rel(opp1_pos))                                       # [20-22] opponent1, egocentric (fixed)
+    obs += list(ego_rel(opp2_pos))                                       # [23-25] opponent2, egocentric (fixed)
 
     return np.array([obs], dtype=np.float32)
 
@@ -988,7 +1055,7 @@ def brain_thread_fn():
         # 2v2 uses one fixed 26-float team contract regardless of difficulty
         # (RobotAgent.CollectTeamObservations never branches on trainingMode) —
         # EXPECTED_OBS only covers the 1v1 easy/medium/hard sizes.
-        obs_size = 26 if mode == "2v2" else EXPECTED_OBS.get(difficulty, 13)
+        obs_size = TEAM_OBS_SIZE if mode == "2v2" else EXPECTED_OBS.get(difficulty, 13)
         try:
             brain = Brain(C.ONNX_PATHS.get(mode, {}).get(difficulty), obs_size)
         except Exception as e:
@@ -1027,6 +1094,7 @@ def _run_match(brain, difficulty, mode, ai_robots):
     action_counts    = {i: {0: 0, 1: 0, 2: 0, 3: 0} for i in ai_robots}
     pos_history      = {i: [] for i in ai_robots}
     recovery_left    = {i: 0 for i in ai_robots}
+    prev_motion      = {i: None for i in ai_robots}   # 2v2 only: (t, rc_w, heading_canonical)
 
     prev_ball_w = None; prev_ball_t = None
     goal_pause_until = 0.0; scoring_armed = True
@@ -1175,18 +1243,64 @@ def _run_match(brain, difficulty, mode, ai_robots):
                                   math.hypot(opp_center_w[0] - nearest[0],
                                              opp_center_w[1] - nearest[1]) < control_dist_px)
 
-            if difficulty == "hard":
-                ball_own_half = False
-                if nearest and ogc_w:
-                    ball_own_half = ((nearest[0] - cx) * (ogc_w[0] - cx) +
-                                     (nearest[1] - cy) * (ogc_w[1] - cy)) > 0.0
-                role_flag[idx] = 1.0 if (ball_own_half or opp_in_control) else 0.0
+            if mode == "2v2":
+                mx = -1.0 if getattr(C, "MIRROR_X", False) else 1.0
+                zf2 = -1.0 if getattr(C, "Z_FLIP", True) else 1.0
 
-            obs = build_observations(
-                rc=rc_w, heading=heading_w, ball_pos=nearest, ball_vel_ms=ball_vel_ms,
-                in_control=in_control, goal_center=gc_w, owngoal_center=ogc_w,
-                opp_center=opp_center_w, opp_heading=opp_heading, opp_in_control=opp_in_control,
-                role_flag=role_flag[idx], difficulty=difficulty)
+                other_idx = 2 if idx == 1 else 1
+                tm_state = r_states[other_idx]
+                tm_age = now - tm_state['last_seen'] if tm_state['last_seen'] else 1e9
+                teammate_pos = warp(tm_state['center']) if tm_age <= C.MARKER_STALE_SECONDS else None
+
+                h3_age = now - h3['last_seen'] if h3['last_seen'] else 1e9
+                h4_age = now - h4['last_seen'] if h4['last_seen'] else 1e9
+                opp1_pos = warp(h3['center']) if h3_age <= C.MARKER_STALE_SECONDS else None
+                opp2_pos = warp(h4['center']) if h4_age <= C.MARKER_STALE_SECONDS else None
+
+                am_nearest = True
+                if nearest and teammate_pos:
+                    my_d = math.hypot(nearest[0] - rc_w[0], nearest[1] - rc_w[1])
+                    tm_d = math.hypot(nearest[0] - teammate_pos[0], nearest[1] - teammate_pos[1])
+                    am_nearest = (my_d < tm_d) or (my_d == tm_d and idx == 1)
+
+                # Self forward-speed / yaw-rate via frame-to-frame differencing —
+                # brain_runner.py has no physics engine, so this mirrors how
+                # ball_vel_ms is already computed above (position deltas over dt),
+                # applied to the robot's own tracked center + heading instead.
+                hx_c, hz_c = mx * heading_w[0], heading_w[1]
+                own_fwd_speed_ms, own_yaw_rate = 0.0, 0.0
+                prev = prev_motion[idx]
+                if prev is not None and (now - prev[0]) > 1e-3:
+                    dt_m = now - prev[0]
+                    (prx, prz), (phx, phz) = prev[1], prev[2]
+                    dxm = mx * (rc_w[0] - prx) * meters_per_px / dt_m
+                    dzm = zf2 * (rc_w[1] - prz) * meters_per_px / dt_m
+                    own_fwd_speed_ms, _ = _ego_project(dxm, dzm, hx_c, hz_c)
+                    sin_dtheta = hx_c * phz - hz_c * phx
+                    cos_dtheta = hx_c * phx + hz_c * phz
+                    own_yaw_rate = math.atan2(sin_dtheta, cos_dtheta) / dt_m
+                prev_motion[idx] = (now, (rc_w[0], rc_w[1]), (hx_c, hz_c))
+
+                obs = build_team_observations(
+                    rc=rc_w, heading=heading_w,
+                    own_fwd_speed_ms=own_fwd_speed_ms, own_yaw_rate=own_yaw_rate,
+                    ball_pos=nearest, ball_vel_ms=ball_vel_ms, in_control=in_control,
+                    goal_center=gc_w, owngoal_center=ogc_w,
+                    teammate_pos=teammate_pos, am_nearest=am_nearest,
+                    opp1_pos=opp1_pos, opp2_pos=opp2_pos)
+            else:
+                if difficulty == "hard":
+                    ball_own_half = False
+                    if nearest and ogc_w:
+                        ball_own_half = ((nearest[0] - cx) * (ogc_w[0] - cx) +
+                                         (nearest[1] - cy) * (ogc_w[1] - cy)) > 0.0
+                    role_flag[idx] = 1.0 if (ball_own_half or opp_in_control) else 0.0
+
+                obs = build_observations(
+                    rc=rc_w, heading=heading_w, ball_pos=nearest, ball_vel_ms=ball_vel_ms,
+                    in_control=in_control, goal_center=gc_w, owngoal_center=ogc_w,
+                    opp_center=opp_center_w, opp_heading=opp_heading, opp_in_control=opp_in_control,
+                    role_flag=role_flag[idx], difficulty=difficulty)
 
             action = brain.get_action(obs)
 
