@@ -430,10 +430,16 @@ def _encode_and_send_display(frame):
 # OBSERVATION BUILDER  (matches RobotAgent.cs CollectObservations)
 # =====================================================================
 
-def build_observations(rc, heading, ball_pos, ball_vel_ms, in_control,
+def build_observations(rc, heading, own_fwd_speed_ms, own_yaw_rate,
+                       ball_pos, ball_vel_ms, in_control,
                        goal_center, owngoal_center,
                        opp_center, opp_heading, opp_in_control,
                        role_flag, difficulty):
+    """1v1 observation contract (13/19/24 floats) — mirrors RobotAgent.cs's
+    CollectObservations() slot-for-slot, egocentric throughout (see
+    build_team_observations()'s docstring for the general approach). Own pos
+    [0-1] and every *_dist scalar are intentionally left in world-frame /
+    frame-independent form, matching CollectObservations() exactly."""
     n, cx, cy = _frame_scale()
     rx, rz = rc
     fwd_x, fwd_z = heading
@@ -444,33 +450,46 @@ def build_observations(rc, heading, ball_pos, ball_vel_ms, in_control,
     # EVERY x-component (positions, headings, velocity) so the frame stays a
     # proper rotation. See config Section 6.
     mx = -1.0 if getattr(C, "MIRROR_X", False) else 1.0
+    hx, hz = mx * fwd_x, fwd_z   # canonical (mirror/flip-corrected) unit heading
 
     def rel(t):
         dx, dz = mx * (t[0] - rx) / n, zf * (t[1] - rz) / n
-        return _clamp(dx), _clamp(dz), _clamp(math.hypot(dx, dz), 0.0, 2.0)
+        fwd, right = _ego_project(dx, dz, hx, hz)
+        return _clamp(fwd), _clamp(right), _clamp(math.hypot(dx, dz), 0.0, 2.0)
 
     bx, bz = ball_pos if ball_pos else (cx + n * 0.5, cy + n * 0.5)
     gx, gz = goal_center if goal_center else (cx, cy - n * 0.5)
     brx, brz, bd = rel((bx, bz))
     grx, grz, gd = rel((gx, gz))
-    vx = _clamp(mx * ball_vel_ms[0] / VEL_SCALE, -2.0, 2.0)
-    vz = _clamp(zf * ball_vel_ms[1] / VEL_SCALE, -2.0, 2.0)
+
+    vx_w = mx * ball_vel_ms[0] / VEL_SCALE
+    vz_w = zf * ball_vel_ms[1] / VEL_SCALE
+    vfwd, vright = _ego_project(vx_w, vz_w, hx, hz)
+    vx, vz = _clamp(vfwd, -2.0, 2.0), _clamp(vright, -2.0, 2.0)
 
     obs = [
-        _clamp(mx * (rx - cx) / n), _clamp(zf * (rz - cy) / n),  # [0-1] robot pos
-        mx * fwd_x, fwd_z,                                       # [2-3] heading
-        brx, brz, bd,                                            # [4-6] ball rel
-        vx, vz,                                                  # [7-8] ball velocity
-        grx, grz, gd,                                            # [9-11] goal rel
+        _clamp(mx * (rx - cx) / n), _clamp(zf * (rz - cy) / n),  # [0-1] robot pos (unchanged: world-frame, absolute)
+        _clamp(own_fwd_speed_ms / ROBOT_VEL_SCALE),               # [2] own fwd speed (was: raw heading x)
+        _clamp(own_yaw_rate / YAW_RATE_SCALE),                    # [3] own yaw rate (was: raw heading z)
+        brx, brz, bd,                                            # [4-6] ball, egocentric
+        vx, vz,                                                  # [7-8] ball velocity, egocentric
+        grx, grz, gd,                                            # [9-11] goal, egocentric
         1.0 if in_control else 0.0,                              # [12] in_control
     ]
 
     if difficulty in ("medium", "hard"):
         if opp_center:
             opx, opz = opp_center
-            obs += [_clamp(mx * (opx - rx) / n), _clamp(zf * (opz - rz) / n),
-                    mx * opp_heading[0], opp_heading[1],
-                    _clamp(math.hypot((opx - rx) / n, (opz - rz) / n), 0.0, 2.0),
+            oprx, oprz, opd = rel((opx, opz))
+            # Opponent's OWN heading, projected onto MY axes — NOT their raw
+            # world heading. Mirrors RobotAgent.cs's EgoVec(opponent.forward)
+            # exactly: a direction-vector rotation, not a position-relative
+            # one, so (unlike oprx/oprz above) no /n normalization — it's
+            # already a unit-vector dot product, naturally in [-1,1], matching
+            # Unity's un-clamped AddObservation(oFwdEgo.x/y).
+            ohx, ohz = mx * opp_heading[0], opp_heading[1]
+            ofwd, oright = _ego_project(ohx, ohz, hx, hz)
+            obs += [oprx, oprz, ofwd, oright, opd,
                     1.0 if opp_in_control else 0.0]                        # [13-18]
         else:
             obs += [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
@@ -1243,10 +1262,29 @@ def _run_match(brain, difficulty, mode, ai_robots):
                                   math.hypot(opp_center_w[0] - nearest[0],
                                              opp_center_w[1] - nearest[1]) < control_dist_px)
 
-            if mode == "2v2":
-                mx = -1.0 if getattr(C, "MIRROR_X", False) else 1.0
-                zf2 = -1.0 if getattr(C, "Z_FLIP", True) else 1.0
+            # Self forward-speed / yaw-rate via frame-to-frame differencing —
+            # brain_runner.py has no physics engine, so this mirrors how
+            # ball_vel_ms is already computed above (position deltas over dt),
+            # applied to the robot's own tracked center + heading instead.
+            # Needed by BOTH modes now (RobotAgent.cs's 1v1 CollectObservations
+            # uses the same self-motion slots [2-3] as team mode).
+            mx = -1.0 if getattr(C, "MIRROR_X", False) else 1.0
+            zf2 = -1.0 if getattr(C, "Z_FLIP", True) else 1.0
+            hx_c, hz_c = mx * heading_w[0], heading_w[1]
+            own_fwd_speed_ms, own_yaw_rate = 0.0, 0.0
+            prev = prev_motion[idx]
+            if prev is not None and (now - prev[0]) > 1e-3:
+                dt_m = now - prev[0]
+                (prx, prz), (phx, phz) = prev[1], prev[2]
+                dxm = mx * (rc_w[0] - prx) * meters_per_px / dt_m
+                dzm = zf2 * (rc_w[1] - prz) * meters_per_px / dt_m
+                own_fwd_speed_ms, _ = _ego_project(dxm, dzm, hx_c, hz_c)
+                sin_dtheta = hx_c * phz - hz_c * phx
+                cos_dtheta = hx_c * phx + hz_c * phz
+                own_yaw_rate = math.atan2(sin_dtheta, cos_dtheta) / dt_m
+            prev_motion[idx] = (now, (rc_w[0], rc_w[1]), (hx_c, hz_c))
 
+            if mode == "2v2":
                 other_idx = 2 if idx == 1 else 1
                 tm_state = r_states[other_idx]
                 tm_age = now - tm_state['last_seen'] if tm_state['last_seen'] else 1e9
@@ -1262,24 +1300,6 @@ def _run_match(brain, difficulty, mode, ai_robots):
                     my_d = math.hypot(nearest[0] - rc_w[0], nearest[1] - rc_w[1])
                     tm_d = math.hypot(nearest[0] - teammate_pos[0], nearest[1] - teammate_pos[1])
                     am_nearest = (my_d < tm_d) or (my_d == tm_d and idx == 1)
-
-                # Self forward-speed / yaw-rate via frame-to-frame differencing —
-                # brain_runner.py has no physics engine, so this mirrors how
-                # ball_vel_ms is already computed above (position deltas over dt),
-                # applied to the robot's own tracked center + heading instead.
-                hx_c, hz_c = mx * heading_w[0], heading_w[1]
-                own_fwd_speed_ms, own_yaw_rate = 0.0, 0.0
-                prev = prev_motion[idx]
-                if prev is not None and (now - prev[0]) > 1e-3:
-                    dt_m = now - prev[0]
-                    (prx, prz), (phx, phz) = prev[1], prev[2]
-                    dxm = mx * (rc_w[0] - prx) * meters_per_px / dt_m
-                    dzm = zf2 * (rc_w[1] - prz) * meters_per_px / dt_m
-                    own_fwd_speed_ms, _ = _ego_project(dxm, dzm, hx_c, hz_c)
-                    sin_dtheta = hx_c * phz - hz_c * phx
-                    cos_dtheta = hx_c * phx + hz_c * phz
-                    own_yaw_rate = math.atan2(sin_dtheta, cos_dtheta) / dt_m
-                prev_motion[idx] = (now, (rc_w[0], rc_w[1]), (hx_c, hz_c))
 
                 obs = build_team_observations(
                     rc=rc_w, heading=heading_w,
@@ -1297,7 +1317,9 @@ def _run_match(brain, difficulty, mode, ai_robots):
                     role_flag[idx] = 1.0 if (ball_own_half or opp_in_control) else 0.0
 
                 obs = build_observations(
-                    rc=rc_w, heading=heading_w, ball_pos=nearest, ball_vel_ms=ball_vel_ms,
+                    rc=rc_w, heading=heading_w,
+                    own_fwd_speed_ms=own_fwd_speed_ms, own_yaw_rate=own_yaw_rate,
+                    ball_pos=nearest, ball_vel_ms=ball_vel_ms,
                     in_control=in_control, goal_center=gc_w, owngoal_center=ogc_w,
                     opp_center=opp_center_w, opp_heading=opp_heading, opp_in_control=opp_in_control,
                     role_flag=role_flag[idx], difficulty=difficulty)
