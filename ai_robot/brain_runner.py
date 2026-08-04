@@ -985,7 +985,10 @@ def brain_thread_fn():
             difficulty = match_difficulty; mode = match_mode
         print(f"[Brain] START — difficulty={difficulty} mode={mode}")
 
-        obs_size = EXPECTED_OBS.get(difficulty, 13)
+        # 2v2 uses one fixed 26-float team contract regardless of difficulty
+        # (RobotAgent.CollectTeamObservations never branches on trainingMode) —
+        # EXPECTED_OBS only covers the 1v1 easy/medium/hard sizes.
+        obs_size = 26 if mode == "2v2" else EXPECTED_OBS.get(difficulty, 13)
         try:
             brain = Brain(C.ONNX_PATHS.get(mode, {}).get(difficulty), obs_size)
         except Exception as e:
