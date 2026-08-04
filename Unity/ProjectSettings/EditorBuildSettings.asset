@@ -5,9 +5,6 @@ EditorBuildSettings:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Scenes:
-  - enabled: 0
-    path: Assets/Scenes/TrainingArena.unity
-    guid: 811059f4fe79d4f439712b8bfb29e2be
   - enabled: 1
     path: Assets/Scenes/MainMenu.unity
     guid: 5de824ccc46a40d4cae0f8b1d36daf91

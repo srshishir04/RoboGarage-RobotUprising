@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections;
 using System.Collections.Concurrent;
 using System.Net;
@@ -18,7 +18,6 @@ using TMPro;
 ///   • Connection dot — green while Python heartbeats arrive, red otherwise.
 ///   • Kickoff trigger — first heartbeat calls LiveMatchManager.BeginMatch().
 ///   • HUD display: mode/difficulty label, scoreboard, count-up clock, kickoff/respawn text.
-///   • Flash feedback (goal / pickup / wall / tackle).
 ///   • Routes Python goal events into LiveMatchManager.RegisterGoal(...).
 ///
 /// NOT RESPONSIBLE FOR
@@ -29,22 +28,20 @@ using TMPro;
 ///   The UDP socket runs on a background thread. It writes only into a thread-safe
 ///   queue and a long timestamp; all Unity API calls happen on the main thread.
 ///
-/// PHASE 4 NOTE
-///   HandleUdpEvent currently parses events with a tolerant contains-check. The robust
-///   JSON parse + full Python->Unity protocol hardening lands in Phase 4. The score
-///   ROUTING below (RegisterGoal) is final and correct.
+/// UI (spec §4.2): the HUD's visual components changed from raw Text/Image to the shared
+/// component set (ScorePodUI, TimerDisplayUI, StatusDot, ChipLabelUI) — every event handler
+/// below still computes the exact same values as before, just pushes them through the new
+/// components' APIs instead of setting .text/.color directly.
 /// </summary>
 [RequireComponent(typeof(LiveMatchManager))]
 public class GameSceneUI : MonoBehaviour
 {
     // ── Top bar ────────────────────────────────────────────────────────────────
     [Header("Top bar")]
-    [SerializeField] private TextMeshProUGUI modeText;          // "1v1 · EASY"
-    [SerializeField] private TextMeshProUGUI scoreText;         // "AI  0 — 0  Human"
-    [SerializeField] private TextMeshProUGUI scoreAIText;       // optional separate label
-    [SerializeField] private TextMeshProUGUI scoreHumanText;    // optional separate label
-    [SerializeField] private TextMeshProUGUI timerText;         // "03:00" (elapsed, counts up)
-    [SerializeField] private Image connectionDot;     // green/red
+    [SerializeField] private ChipLabelUI difficultyChip;         // "EASY" / "MEDIUM" / "HARD"
+    [SerializeField] private TextMeshProUGUI modeLabel;          // "1V1" / "2V2"
+    [SerializeField] private ScorePodUI scorePod;
+    [SerializeField] private TimerDisplayUI timer;
 
     // ── Camera ──────────────────────────────────────────────────────────────────
     [Header("Camera")]
@@ -57,30 +54,16 @@ public class GameSceneUI : MonoBehaviour
 
     // ── Bottom bar ────────────────────────────────────────────────────────────────
     [Header("Bottom bar")]
+    [SerializeField] private StatusDot connectionDot;
     [SerializeField] private TextMeshProUGUI statusText;
     [SerializeField] private TextMeshProUGUI respawnText;       // "Kickoff in 3..." (optional)
-
-    // ── Flash feedback ──────────────────────────────────────────────────────────
-    [Header("Flash feedback")]
-    [SerializeField] private CanvasGroup flashPanel;
-    [SerializeField] private TextMeshProUGUI flashText;
 
     // ── UDP ────────────────────────────────────────────────────────────────────────
     [Header("UDP — Python → Unity events")]
     [Tooltip("Must match config.py UNITY_EVENT_PORT (default 4211).")]
     [SerializeField] private int eventPort = 4211;
 
-    // ── Colours / constants ─────────────────────────────────────────────────────
-    private static readonly Color DOT_GREEN = new Color(0.20f, 0.85f, 0.30f);
-    private static readonly Color DOT_RED = new Color(0.90f, 0.20f, 0.20f);
-    private static readonly Color C_GOAL = new Color(0.20f, 0.85f, 0.30f);
-    private static readonly Color C_PICKUP = new Color(1.00f, 0.85f, 0.10f);
-    private static readonly Color C_WALL = new Color(0.90f, 0.30f, 0.10f);
-    private static readonly Color C_TACKLE = new Color(0.60f, 0.20f, 0.90f);
-    private static readonly Color C_CONCEDE = new Color(0.90f, 0.20f, 0.20f);
-
     private const float CONNECTION_TIMEOUT = 3f;
-    private const float FLASH_FADE_SPEED = 1.5f;
 
     // ── Runtime state ─────────────────────────────────────────────────────────────
     private LiveMatchManager match;
@@ -124,9 +107,8 @@ public class GameSceneUI : MonoBehaviour
         elapsedSeconds = 0f;
         UpdateTimerDisplay();
 
-        if (flashPanel != null) flashPanel.alpha = 0f;
         if (respawnText != null) respawnText.text = "";
-        if (connectionDot != null) connectionDot.color = DOT_RED;
+        connectionDot?.SetState(StatusDot.State.Disconnected);
         if (statusText != null) statusText.text = "Waiting for brain...";
 
         StartCamera();
@@ -138,7 +120,6 @@ public class GameSceneUI : MonoBehaviour
         if (!running) return;
         DrainEventQueue();
         UpdateConnectionDot();
-        FadeFlashPanel();
     }
 
     private void OnDestroy()
@@ -228,8 +209,6 @@ public class GameSceneUI : MonoBehaviour
 
     // =========================================================================
     //  PYTHON EVENT HANDLER
-    //  PHASE 4: replace the tolerant contains-check with a real JSON parse and
-    //  finalise the full event protocol. Score ROUTING below is already final.
     // =========================================================================
     private void HandleUdpEvent(string json)
     {
@@ -244,10 +223,6 @@ public class GameSceneUI : MonoBehaviour
             TriggerKickoffOnce();
             return;
         }
-
-        if (compact.Contains("\"event\":\"pickup\"")) { ShowFlash("Ball picked up! 🤖", C_PICKUP); return; }
-        if (compact.Contains("\"event\":\"wall\"")) { ShowFlash("Wall hit!", C_WALL); return; }
-        if (compact.Contains("\"event\":\"tackle\"")) { ShowFlash("Tackle! 💥", C_TACKLE); return; }
 
         // Goals → route to the single score owner. Check the more specific tags first.
         if (compact.Contains("\"event\":\"score_a\"")) { match.RegisterGoal("AI"); return; }
@@ -269,8 +244,6 @@ public class GameSceneUI : MonoBehaviour
     {
         scoreAI = ai; scoreHuman = human;
         UpdateScoreDisplay();
-        ShowFlash(scoringTeam == "AI" ? "GOAL! ⚽" : "They scored! 😤",
-                  scoringTeam == "AI" ? C_GOAL : C_CONCEDE);
     }
 
     private void HandleClockTick(float secondsElapsed)
@@ -284,7 +257,7 @@ public class GameSceneUI : MonoBehaviour
         if (respawnText == null) return;
         int secs = Mathf.CeilToInt(secondsRemaining);
         respawnText.text = secs > 0 ? $"Kickoff in {secs}..." : "";
-        if (secs <= 0 && statusText != null) statusText.text = $"Brain connected  [{GameSettings.DifficultyLabel}]";
+        if (secs <= 0 && statusText != null) statusText.text = "Brain connected";
     }
 
     // =========================================================================
@@ -292,31 +265,18 @@ public class GameSceneUI : MonoBehaviour
     // =========================================================================
     private void ApplyModeLabel()
     {
-        if (modeText == null) return;
-        modeText.text = $"{GameSettings.MatchLabel}  ·  {GameSettings.DifficultyLabel.ToUpper()}";
-        switch (GameSettings.Difficulty)
-        {
-            case GameSettings.TrainingMode.Easy: modeText.color = new Color(0.23f, 0.80f, 0.35f); break;
-            case GameSettings.TrainingMode.Hard: modeText.color = new Color(0.82f, 0.23f, 0.23f); break;
-            default: modeText.color = new Color(0.86f, 0.67f, 0.16f); break;
-        }
+        difficultyChip?.SetText(GameSettings.DifficultyLabel.ToUpper());
+        if (modeLabel != null) modeLabel.text = GameSettings.MatchLabel.ToUpper();
     }
 
     private void UpdateScoreDisplay()
     {
-        if (scoreText != null) scoreText.text = $"AI  {scoreAI} — {scoreHuman}  Human";
-        if (scoreAIText != null) scoreAIText.text = scoreAI.ToString();
-        if (scoreHumanText != null) scoreHumanText.text = scoreHuman.ToString();
+        scorePod?.SetScore(scoreHuman, scoreAI);
     }
 
     private void UpdateTimerDisplay()
     {
-        if (timerText != null)
-        {
-            int mins = (int)(elapsedSeconds / 60f);
-            int secs = (int)(elapsedSeconds % 60f);
-            timerText.text = $"{mins:00}:{secs:00}";
-        }
+        timer?.SetSeconds(elapsedSeconds);
     }
 
     private void UpdateConnectionDot()
@@ -329,34 +289,18 @@ public class GameSceneUI : MonoBehaviour
 
         if (connected == pythonConnected) return;   // only act on change
         pythonConnected = connected;
-        connectionDot.color = connected ? DOT_GREEN : DOT_RED;
-        statusText.text = "Brain connected [" + GameSettings.DifficultyLabel + "]";
+        connectionDot.SetState(connected ? StatusDot.State.Connected : StatusDot.State.Disconnected);
+        statusText.text = "Brain connected";
 
         if (statusText != null && !connected)
             statusText.text = "Brain disconnected — waiting...";
     }
 
     // =========================================================================
-    //  FLASH
-    // =========================================================================
-    private void ShowFlash(string message, Color color)
-    {
-        if (flashText != null) { flashText.text = message; flashText.color = color; }
-        if (flashPanel != null) flashPanel.alpha = 1f;
-    }
-
-    private void FadeFlashPanel()
-    {
-        if (flashPanel == null || flashPanel.alpha <= 0f) return;
-        flashPanel.alpha = Mathf.MoveTowards(flashPanel.alpha, 0f, Time.deltaTime * FLASH_FADE_SPEED);
-    }
-
-    // =========================================================================
     //  BUTTONS
     // =========================================================================
-    /// <summary>onClick → StopButton (HUD) and onClick → BtnReturnToMenu (overlay).</summary>
+    /// <summary>onClick → StopButton (HUD).</summary>
     public void OnStopClicked() => ReturnToMenu();
-    public void OnReturnToMenuClicked() => ReturnToMenu();
 
     private void ReturnToMenu()
     {

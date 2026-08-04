@@ -7,22 +7,22 @@ using System.Threading;
 using System.Collections.Concurrent;
 
 /// <summary>
-/// CameraControl � Python owns the physical webcam; Unity displays the feed and
+/// CameraControl — Python owns the physical webcam; Unity displays the feed and
 /// drives exposure/gain. Replaces the old Unity-captures / FrameSender pattern.
 ///
 /// Two jobs:
 ///   1. RECEIVE the processed JPEG feed from brain_runner.py on displayPort (4215)
 ///      and blit it onto the GameScene camera RawImage. Because the feed comes
 ///      from the REAL camera, the panel visibly darkens/brightens when the
-///      exposure slider moves � that is the operator's live feedback loop.
+///      exposure slider moves — that is the operator's live feedback loop.
 ///   2. SEND slider changes to brain_runner.py on controlPort (4213):
 ///        "CAMERA:<exposure>:<gain>:<auto 0|1>"   applied live to the webcam
 ///        "CAMERA_SAVE"                            persist to camera_settings.json
 ///
-/// Wiring in GameScene:
-///   � Put this on the same GameObject as GameSceneUI (the "Manager").
-///   � Assign cameraView  -> the same RawImage GameSceneUI used for the feed.
-///   � Assign exposureSlider, gainSlider, autoToggle, saveButton (see CameraSliderUI).
+/// UI now lives inside the gear-icon popover (spec §5) instead of an always-visible
+/// left panel — see CameraPopoverUI for the open/close/animation logic. Only the
+/// container changed; every exposure/gain/save code path below is unchanged from
+/// the original always-visible-panel version.
 /// </summary>
 public class CameraControl : MonoBehaviour
 {
@@ -42,13 +42,15 @@ public class CameraControl : MonoBehaviour
     [SerializeField] private int gainMax = 255;
     [SerializeField] private int gainDefault = 25;
 
-    [Header("UI (optional � assign if you use the built-in slider panel)")]
-    [SerializeField] private Slider exposureSlider;
-    [SerializeField] private Slider gainSlider;
+    [Header("UI — popover component prefabs (spec §5)")]
+    [SerializeField] private SliderRowUI exposureRow;
+    [SerializeField] private SliderRowUI gainRow;
     [SerializeField] private Toggle autoToggle;
     [SerializeField] private Button saveButton;
-    [SerializeField] private TMPro.TextMeshProUGUI exposureLabel;
-    [SerializeField] private TMPro.TextMeshProUGUI gainLabel;
+    [SerializeField] private SaveButtonFeedback saveFeedback;
+
+    private Slider exposureSlider => exposureRow != null ? exposureRow.Slider : null;
+    private Slider gainSlider => gainRow != null ? gainRow.Slider : null;
 
     // Send no more than ~15 camera msgs/sec while dragging (avoid flooding 4213).
     private const float SEND_INTERVAL = 0.066f;
@@ -183,6 +185,7 @@ public class CameraControl : MonoBehaviour
             saveButton.onClick.AddListener(OnSavePressed);
 
         RefreshLabels();
+        RefreshSliderEnabled();
     }
 
     private void OnExposureChanged(float v)
@@ -202,9 +205,8 @@ public class CameraControl : MonoBehaviour
     private void OnAutoChanged(bool on)
     {
         _auto = on;
-        // When auto is on, the manual sliders have no effect � grey them out.
-        if (exposureSlider != null) exposureSlider.interactable = !on;
-        if (gainSlider != null) gainSlider.interactable = !on;
+        // When auto is on, the manual sliders have no effect — grey them out (spec §3.7).
+        RefreshSliderEnabled();
         SendCameraSettings(force: true);
     }
 
@@ -215,14 +217,21 @@ public class CameraControl : MonoBehaviour
         {
             _controlSock.Send(msg, msg.Length, _controlEP);
             Debug.Log("[CameraControl] Sent CAMERA_SAVE.");
+            saveFeedback?.ShowSaved();
         }
         catch (Exception e) { Debug.LogWarning($"[CameraControl] Save send failed: {e.Message}"); }
     }
 
     private void RefreshLabels()
     {
-        if (exposureLabel != null) exposureLabel.text = $"Exposure: {_exposure}";
-        if (gainLabel != null) gainLabel.text = $"Gain: {_gain}";
+        exposureRow?.SetValueText(_exposure.ToString());
+        gainRow?.SetValueText(_gain.ToString());
+    }
+
+    private void RefreshSliderEnabled()
+    {
+        exposureRow?.SetEnabled(!_auto);
+        gainRow?.SetEnabled(!_auto);
     }
 
     // =====================================================================
