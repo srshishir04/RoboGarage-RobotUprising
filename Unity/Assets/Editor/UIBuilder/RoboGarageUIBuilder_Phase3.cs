@@ -58,8 +58,7 @@ public static class RoboGarageUIBuilder_Phase3
         var segmentPrefab = Load<SegmentButton>("SegmentButton");
         var primaryPrefab = Load<ArcadeButton>("PrimaryButton");
         var secondaryPrefab = Load<ArcadeButton>("SecondaryButton");
-        var pillPrefab = Load<ConnectionPillUI>("ConnectionPill");
-        if (segmentPrefab == null || primaryPrefab == null || secondaryPrefab == null || pillPrefab == null)
+        if (segmentPrefab == null || primaryPrefab == null || secondaryPrefab == null)
         {
             Debug.LogError("[RoboGarageUIBuilder_Phase3] Aborted — run Phase 2 first.");
             return;
@@ -94,7 +93,6 @@ public static class RoboGarageUIBuilder_Phase3
         var (btnEasy, btnMedium, btnHard) = BuildDifficultyRow(content, segmentPrefab);
         var (btn1v1, btn2v2) = BuildMatchModeRow(content, segmentPrefab);
         var (btnPlay, btnExit) = BuildActionRow(content, primaryPrefab, secondaryPrefab);
-        BuildConnectionPill(content, pillPrefab);
         var warningText = BuildBrainWarning(content);
 
         WireMainMenuUI(menuUI, btnEasy, btnMedium, btnHard, btn1v1, btn2v2, btnPlay, btnExit, warningText);
@@ -190,25 +188,10 @@ public static class RoboGarageUIBuilder_Phase3
         layout.childControlWidth = true;
         layout.childControlHeight = true;
 
-        // Title + subtitle + connection pill are grouped at 14px spacing (an override of the
-        // block's default 34px column gap), then this whole group sits 34px above Controls.
-        var titleAndPill = CreateUIObject("TitleAndPill", content);
-        var tapLayout = titleAndPill.gameObject.AddComponent<VerticalLayoutGroup>();
-        tapLayout.spacing = 14;
-        tapLayout.childAlignment = TextAnchor.UpperCenter;
-        tapLayout.childForceExpandWidth = false;
-        tapLayout.childForceExpandHeight = false;
-        tapLayout.childControlWidth = true;
-        tapLayout.childControlHeight = true;
-        // No ContentSizeFitter here — titleAndPill is itself a child of content's
-        // VerticalLayoutGroup, which already sizes it from its own VerticalLayoutGroup's
-        // reported preferred height. Adding a ContentSizeFitter on top made two systems
-        // fight over the same size and collapsed the whole subtree to zero.
-
-        BuildTitleGroup(titleAndPill);
-        // Connection pill instantiated by the caller (needs the pill prefab) — placeholder slot:
-        var pillSlot = CreateUIObject("ConnectionPillSlot", titleAndPill);
-        pillSlot.gameObject.AddComponent<LayoutElement>().preferredHeight = 34;
+        // Title group sits directly in content's own 34px column gap above Controls — no
+        // connection pill anymore (removed from the design; there was never a real pre-match
+        // connection check to back it), so the separate 14px-gap wrapper it used to need is gone.
+        BuildTitleGroup(content);
 
         var controlsColumn = CreateUIObject("ControlsColumn", content);
         controlsColumn.gameObject.AddComponent<LayoutElement>().preferredWidth = 560;
@@ -219,7 +202,9 @@ public static class RoboGarageUIBuilder_Phase3
         colLayout.childForceExpandHeight = false;
         colLayout.childControlWidth = true;
         colLayout.childControlHeight = true;
-        // Same reasoning as titleAndPill above — no ContentSizeFitter needed or wanted here.
+        // No ContentSizeFitter — this is itself a child of content's VerticalLayoutGroup, which
+        // already sizes it from its own VerticalLayoutGroup's reported preferred height. Adding
+        // one on top made two systems fight over the same size and collapsed the subtree to zero.
 
         return controlsColumn;
     }
@@ -234,7 +219,8 @@ public static class RoboGarageUIBuilder_Phase3
         layout.childForceExpandHeight = false;
         layout.childControlWidth = true;
         layout.childControlHeight = true;
-        // No ContentSizeFitter — same reasoning as titleAndPill/controlsColumn above.
+        // No ContentSizeFitter — same reasoning as ControlsColumn above (it's a LayoutGroup
+        // child of content, which already sizes it correctly on its own).
 
         // Soft glow behind the title — an approximation of the spec's blurred drop shadow;
         // there's no blur shader in play here, just a soft radial sprite.
@@ -254,19 +240,6 @@ public static class RoboGarageUIBuilder_Phase3
 
         var subtitle = CreateLayoutText("Subtitle", titleGroup, "HUMAN VS. ROBOT SOCCER", _jbRegular, 12, new Color32(0xFB, 0xFB, 0xFB, 0xFF), 0.22f);
         // Subtitle copy isn't specified in the spec — placeholder tagline.
-    }
-
-    private static void BuildConnectionPill(Transform controlsColumn, ConnectionPillUI pillPrefab)
-    {
-        // Actual pill lives in TitleAndPill/ConnectionPillSlot, not the controls column —
-        // find it via the sibling path since BuildContentBlock already created the slot.
-        Transform titleAndPill = controlsColumn.parent.Find("TitleAndPill");
-        Transform slot = titleAndPill.Find("ConnectionPillSlot");
-
-        var instance = (GameObject)PrefabUtility.InstantiatePrefab(pillPrefab.gameObject, slot);
-        var pill = instance.GetComponent<ConnectionPillUI>();
-        // Cosmetic-only per the Phase 3 decision — no real connection check exists yet.
-        pill.SetConnecting();
     }
 
     private static (SegmentButton easy, SegmentButton medium, SegmentButton hard) BuildDifficultyRow(
@@ -298,7 +271,7 @@ public static class RoboGarageUIBuilder_Phase3
         layout.childForceExpandHeight = false;
         layout.childControlWidth = true;
         layout.childControlHeight = true;
-        // No ContentSizeFitter — same reasoning as titleAndPill/controlsColumn above.
+        // No ContentSizeFitter — same reasoning as ControlsColumn/TitleGroup above.
 
         CreateLayoutText("Label", block, labelText, _jbRegular, 11, Colors.TextTertiary, 0.22f);
 

@@ -116,7 +116,7 @@ public static class RoboGarageUIFactory
         var fillImg = CreateImage(name + "_Fill", root, fillColor, sprite, Image.Type.Sliced);
         StretchFill(fillImg.rectTransform, inset, inset, inset, inset);
         // Ignored by any HorizontalLayoutGroup a caller adds to `root` afterward (e.g. ScorePod,
-        // ConnectionPill) — otherwise the layout group would try to arrange this backdrop as a
+        // DifficultyChip) — otherwise the layout group would try to arrange this backdrop as a
         // row item instead of leaving it as a stretched background.
         fillImg.gameObject.AddComponent<LayoutElement>().ignoreLayout = true;
 

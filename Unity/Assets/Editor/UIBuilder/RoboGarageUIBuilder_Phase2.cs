@@ -54,10 +54,9 @@ public static class RoboGarageUIBuilder_Phase2
         BuildTimer();
         BuildDifficultyChip();
         BuildStatusDot();
-        BuildConnectionPill();
 
         AssetDatabase.SaveAssets();
-        Debug.Log($"[RoboGarageUIBuilder_Phase2] Built 13 prefabs into {Folder}.");
+        Debug.Log($"[RoboGarageUIBuilder_Phase2] Built 12 prefabs into {Folder}.");
     }
 
     // ── 3.1 Segment button ──────────────────────────────────────────────────────
@@ -433,58 +432,6 @@ public static class RoboGarageUIBuilder_Phase2
         SetRef(statusDot, "glow", glow);
 
         SavePrefab<StatusDot>(root.gameObject, Folder, "StatusDot");
-    }
-
-    // ── 3.14 Connection pill (Main Menu) ─────────────────────────────────────────
-    private static void BuildConnectionPill()
-    {
-        var (root, fill, _) = CreateRoundedPanel("ConnectionPill", null, new Vector2(200, 34),
-            Colors.ControlSurface, 17, Colors.ControlBorder, 1);
-        var layout = root.gameObject.AddComponent<HorizontalLayoutGroup>();
-        layout.padding = new RectOffset(16, 16, 8, 8);
-        layout.spacing = 10;
-        layout.childAlignment = TextAnchor.MiddleCenter;
-        layout.childForceExpandWidth = false;
-        layout.childForceExpandHeight = false;
-        layout.childControlWidth = true;
-        layout.childControlHeight = true;
-        var fitter = root.gameObject.AddComponent<ContentSizeFitter>();
-        fitter.horizontalFit = ContentSizeFitter.FitMode.PreferredSize;
-
-        var dotRoot = CreateUIObject("StatusDot", root);
-        dotRoot.sizeDelta = new Vector2(8, 8);
-        var dotLE = dotRoot.gameObject.AddComponent<LayoutElement>();
-        dotLE.preferredWidth = 8; dotLE.preferredHeight = 8;
-        var glow = CreateImage("Glow", dotRoot, Colors.StatusGreen, LoadGlow(), Image.Type.Simple);
-        glow.raycastTarget = false;
-        glow.rectTransform.sizeDelta = new Vector2(24, 24);
-        glow.rectTransform.anchorMin = glow.rectTransform.anchorMax = new Vector2(0.5f, 0.5f);
-        glow.rectTransform.anchoredPosition = Vector2.zero;
-        var dot = CreateImage("Dot", dotRoot, Colors.StatusRed, LoadCircle(), Image.Type.Simple);
-        dot.raycastTarget = false;
-        StretchFill(dot.rectTransform);
-        var statusDot = dotRoot.gameObject.AddComponent<StatusDot>();
-        SetRef(statusDot, "dot", dot);
-        SetRef(statusDot, "glow", glow);
-
-        var statusText = CreateLayoutText("StatusText", root, "Searching for robots…", _jbRegular, 12, Colors.TextBright);
-        var latencyText = CreateLayoutText("LatencyText", root, "· 12ms", _jbRegular, 12, Colors.TextBright);
-
-        var retryRoot = CreateUIObject("Retry", root);
-        var retryLE = retryRoot.gameObject.AddComponent<LayoutElement>();
-        var retryLabel = CreateText("Label", retryRoot, "Retry", _archivoBold, 12, Colors.GarageOrange);
-        var retryBtn = retryRoot.gameObject.AddComponent<Button>();
-        retryBtn.targetGraphic = retryLabel;
-        retryBtn.transition = Selectable.Transition.None;
-        retryLE.preferredWidth = 44;
-
-        var pill = root.gameObject.AddComponent<ConnectionPillUI>();
-        SetRef(pill, "dot", statusDot);
-        SetRef(pill, "statusText", statusText);
-        SetRef(pill, "latencyText", latencyText);
-        SetRef(pill, "retryButton", retryBtn);
-
-        SavePrefab<ConnectionPillUI>(root.gameObject, Folder, "ConnectionPill");
     }
 
     // ── helpers ───────────────────────────────────────────────────────────────────
