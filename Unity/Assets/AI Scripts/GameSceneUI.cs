@@ -46,11 +46,6 @@ public class GameSceneUI : MonoBehaviour
     // ── Camera ──────────────────────────────────────────────────────────────────
     [Header("Camera")]
     [SerializeField] private RawImage cameraView;
-    [Tooltip("Camera device index. 0 = first device listed in the Console at startup.")]
-    [SerializeField] private int cameraDeviceIndex = 0;
-    [SerializeField] private int cameraWidth = 960;
-    [SerializeField] private int cameraHeight = 960;
-    [SerializeField] private int cameraFps = 30;
 
     // ── Bottom bar ────────────────────────────────────────────────────────────────
     [Header("Bottom bar")]
