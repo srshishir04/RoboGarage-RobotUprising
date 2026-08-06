@@ -98,8 +98,8 @@ DISPLAY_MAX_UDP_BYTES = 60000  # JPEG larger than this is downscaled before send
 ESP32_CMD_PORT    = 4210   # Python → ESP32   (motor command byte: F/L/R/S)
 ESP32_STATUS_PORT = 4214   # ESP32  → Python   (status beacon "OK")
 
-ROBOT1_IP = "192.168.8.188"   # AI Robot 1  (ArUco ID 1) — set from ESP32 serial output
-ROBOT2_IP = "192.168.8.149"   # AI Robot 2  (ArUco ID 2) — set from ESP32 serial output
+ROBOT1_IP = "SET_ME"   # AI Robot 1  (ArUco ID 1) — SET ME: copy from ESP32 serial output after flashing
+ROBOT2_IP = "SET_ME"   # AI Robot 2  (ArUco ID 2) — SET ME: copy from ESP32 serial output after flashing
 
 ARUCO_ID_ROBOT1   = 1    # AI robot 1
 ARUCO_ID_ROBOT2   = 2    # AI robot 2 (2v2)

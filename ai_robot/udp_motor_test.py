@@ -11,8 +11,8 @@ and in which direction — and does the ESP32's status beacon come back.
 RUN brain_runner.py STOPPED (both bind UDP 4214; only one can at a time).
 
 Usage:
-    python udp_motor_test.py                 # uses 192.168.8.149
-    python udp_motor_test.py 192.168.8.152   # test the other robot
+    python udp_motor_test.py                 # uses config.ROBOT1_IP
+    python udp_motor_test.py 192.168.1.102   # test a specific robot IP instead
 
 Keys (press Enter after each):
     f  forward      l  rotate-left(CCW)     r  rotate-right(CW)
@@ -26,8 +26,9 @@ packet would look like nothing happened). A line prints every second telling you
 whether an "OK" beacon has arrived from the robot on port 4214.
 """
 import socket, sys, threading, time
+import config as C
 
-ROBOT_IP    = sys.argv[1] if len(sys.argv) > 1 else "192.168.8.149"
+ROBOT_IP    = sys.argv[1] if len(sys.argv) > 1 else C.ROBOT1_IP
 CMD_PORT    = 4210          # must match config.ESP32_CMD_PORT
 STATUS_PORT = 4214          # must match config.ESP32_STATUS_PORT
 BURST_SECONDS = 1.2         # how long one key-press drives the motors
