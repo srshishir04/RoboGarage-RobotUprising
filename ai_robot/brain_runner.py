@@ -1088,12 +1088,21 @@ def brain_thread_fn():
         if mode == "2v2":
             print(f"[Brain] 2v2 — waiting up to {C.STARTUP_TIMEOUT_S}s for both robots...")
             deadline = time.time() + C.STARTUP_TIMEOUT_S; ok = False
+            last_wait_heartbeat = time.time()
             while time.time() < deadline:
                 with robot_lock:
                     ok = (robot_states[1]['center'] is not None and
                           robot_states[2]['center'] is not None)
                 if ok:
                     print("[Brain] Both AI robots detected."); break
+                # Keep sending heartbeats while waiting — this loop has no
+                # other traffic to Unity, and Unity's CONNECTION_TIMEOUT (3s,
+                # GameSceneUI.cs) is shorter than STARTUP_TIMEOUT_S (10s), so
+                # without this a legitimate "still waiting for both robots"
+                # wait was silently indistinguishable from a dead connection.
+                now = time.time()
+                if now - last_wait_heartbeat >= C.HEARTBEAT_INTERVAL:
+                    send_unity_event("heartbeat"); last_wait_heartbeat = now
                 time.sleep(0.2)
             if not ok:
                 print("[Brain] HARD-FAIL: 2v2 but a robot is missing.")
