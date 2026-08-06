@@ -31,8 +31,8 @@
 #include <WiFiUdp.h>
 
 // ── CONFIG ───────────────────────────────────────────────────────────────────
-const char* WIFI_SSID     = "Robo_Device_net";
-const char* WIFI_PASSWORD = "RoboGarage2@25";
+const char* WIFI_SSID     = " ";    // Add Your Own WiFi Credentials 
+const char* WIFI_PASSWORD = " ";    // Add Your Own WiFi Credentials
 const int   UDP_PORT      = 4210;   // commands in  (match config.py ESP32_CMD_PORT)
 const int   STATUS_PORT   = 4214;   // status out   (match config.py ESP32_STATUS_PORT)
 
