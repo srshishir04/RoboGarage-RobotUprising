@@ -119,10 +119,19 @@ brains are unaffected either way.
 
 `esp32_wifi_brain/esp32_wifi_brain.ino` — receives single-byte motor commands (`F`/`L`/`R`/`B`/
 `S`) from `brain_runner.py` over UDP port 4210, drives the robot with in-place tank turns
-matching how the policy trained, and sends a status beacon back on port 4214. Flash it, note
-the IP it prints over serial, and put that IP in `config.py`'s `ROBOT1_IP`/`ROBOT2_IP`. If a
-robot turns the wrong way, there is exactly **one** knob to flip — see the firmware's own header
-comment (`SWAP_MOTORS`) before touching anything else; editing both the firmware and
+matching how the policy trained, and sends a status beacon back on port 4214.
+
+**⚠️ Required setup before this works — neither of these ships with real values, on purpose:**
+1. **WiFi credentials**: open `esp32_wifi_brain.ino` and set `WIFI_SSID`/`WIFI_PASSWORD`
+   (currently placeholders — `"YOUR_WIFI_SSID"`/`"YOUR_WIFI_PASSWORD"`) to your own network
+   *before* flashing.
+2. **Robot IPs**: after flashing, open the Serial Monitor at 115200 baud, note the IP address
+   each robot prints once it connects, and set `config.py`'s `ROBOT1_IP`/`ROBOT2_IP` (currently
+   `"SET_ME"`) accordingly. These will change if your router reassigns DHCP leases — re-check
+   them if a robot stops responding after a network change.
+
+If a robot turns the wrong way, there is exactly **one** knob to flip — see the firmware's own
+header comment (`SWAP_MOTORS`) before touching anything else; editing both the firmware and
 `config.py`'s `ACTION_TO_CMD` mapping at once cancels out and leaves you back where you started.
 
 ## Dev utilities

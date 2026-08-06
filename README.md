@@ -25,10 +25,12 @@ not playing.
 
 ## Option B — run the full live system (what you need to actually operate the robots)
 
-1. Flash `ai_robot/esp32_wifi_brain/esp32_wifi_brain.ino` to each robot's ESP32 and note the IP
-   each one prints over serial.
-2. Set those IPs in `ai_robot/config.py` (`ROBOT1_IP`/`ROBOT2_IP`), and confirm the physics
-   contract constants there match `Unity/Assets/Scripts/Agent/RobotAgent.cs`.
+1. Open `ai_robot/esp32_wifi_brain/esp32_wifi_brain.ino` and set `WIFI_SSID`/`WIFI_PASSWORD` to
+   your own network (placeholders by default — no real credentials ship in this repo), then
+   flash it to each robot's ESP32 and note the IP each one prints over serial.
+2. Set those IPs in `ai_robot/config.py` (`ROBOT1_IP`/`ROBOT2_IP` — also placeholders by
+   default), and confirm the physics contract constants there match
+   `Unity/Assets/Scripts/Agent/RobotAgent.cs`.
 3. Run `python ai_robot/brain_runner.py` — this owns the webcam and starts tracking/inference
    threads (see `ai_robot/README.md` for the full architecture).
 4. Open `Unity/` in the Unity Editor (or run the extracted `RoboGarageUprising.zip` build) and
