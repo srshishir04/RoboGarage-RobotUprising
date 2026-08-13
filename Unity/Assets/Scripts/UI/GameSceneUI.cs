@@ -104,7 +104,7 @@ public class GameSceneUI : MonoBehaviour
 
         if (respawnText != null) respawnText.text = "";
         connectionDot?.SetState(StatusDot.State.Disconnected);
-        if (statusText != null) statusText.text = "Waiting for brain...";
+        SetStatus("Waiting for brain...", Colors.TextMuted);
 
         StartCamera();
         StartUdpListener();
@@ -143,7 +143,7 @@ public class GameSceneUI : MonoBehaviour
 
     private IEnumerator StartAfterShortDelay()
     {
-        if (statusText != null) statusText.text = "Connecting to brain...";
+        SetStatus("Connecting to brain...", Colors.StatusAmber);
 
         // Find / create the control sender (kept as FrameSender for the START/STOP
         // control messages — it no longer sends frames, just START/STOP on 4213).
@@ -155,7 +155,7 @@ public class GameSceneUI : MonoBehaviour
         yield return new WaitForSeconds(0.3f);
 
         Debug.Log("[GameSceneUI] Sending START to Python (Python owns the camera).");
-        if (statusText != null) statusText.text = "Waiting for brain...";
+        SetStatus("Waiting for brain...", Colors.TextMuted);
         frameSender.SendStart();   // "START:<difficulty>:<mode>" from GameSettings
     }
 
@@ -252,7 +252,7 @@ public class GameSceneUI : MonoBehaviour
         if (respawnText == null) return;
         int secs = Mathf.CeilToInt(secondsRemaining);
         respawnText.text = secs > 0 ? $"Kickoff in {secs}..." : "";
-        if (secs <= 0 && statusText != null) statusText.text = "Brain connected";
+        if (secs <= 0) SetStatus("Brain connected", Colors.StatusGreen);
     }
 
     // =========================================================================
@@ -285,10 +285,15 @@ public class GameSceneUI : MonoBehaviour
         if (connected == pythonConnected) return;   // only act on change
         pythonConnected = connected;
         connectionDot.SetState(connected ? StatusDot.State.Connected : StatusDot.State.Disconnected);
-        statusText.text = "Brain connected";
+        if (connected) SetStatus("Brain connected", Colors.StatusGreen);
+        else SetStatus("Brain disconnected — waiting...", Colors.StatusRed);
+    }
 
-        if (statusText != null && !connected)
-            statusText.text = "Brain disconnected — waiting...";
+    private void SetStatus(string text, Color color)
+    {
+        if (statusText == null) return;
+        statusText.text = text;
+        statusText.color = color;
     }
 
     // =========================================================================
