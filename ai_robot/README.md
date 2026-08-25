@@ -115,11 +115,17 @@ future retraining is unaffected by opponent1-vs-opponent2 assignment order. This
 reward-shaping only; it doesn't touch the observation vector or inference, so the six current
 brains are unaffected either way.
 
-## ESP32 firmware
+## ESP32 firmware — two different robots, two different firmwares
 
-`esp32_wifi_brain/esp32_wifi_brain.ino` — receives single-byte motor commands (`F`/`L`/`R`/`B`/
-`S`) from `brain_runner.py` over UDP port 4210, drives the robot with in-place tank turns
-matching how the policy trained, and sends a status beacon back on port 4214.
+There are two kinds of physical robot in a match, and they run **different, unrelated**
+firmware — don't flash the wrong one onto the wrong chassis:
+
+### AI robot(s) — `esp32_wifi_brain/esp32_wifi_brain.ino`
+
+Receives single-byte motor commands (`F`/`L`/`R`/`B`/`S`) from `brain_runner.py` over **WiFi**
+(UDP port 4210), drives the robot with in-place tank turns matching how the policy trained, and
+sends a status beacon back on port 4214. This is the robot the trained brain actually controls —
+ArUco marker IDs 1/2 (`ARUCO_ID_ROBOT1`/`ROBOT2`).
 
 **⚠️ Required setup before this works — neither of these ships with real values, on purpose:**
 1. **WiFi credentials**: open `esp32_wifi_brain.ino` and set `WIFI_SSID`/`WIFI_PASSWORD`
@@ -133,6 +139,28 @@ matching how the policy trained, and sends a status beacon back on port 4214.
 If a robot turns the wrong way, there is exactly **one** knob to flip — see the firmware's own
 header comment (`SWAP_MOTORS`) before touching anything else; editing both the firmware and
 `config.py`'s `ACTION_TO_CMD` mapping at once cancels out and leaves you back where you started.
+
+### Human/opponent robot — `proportional_manual_control/proportional_manual_control.ino`
+
+Drives a robot manually from a PS4/PS5/Xbox controller over **Bluetooth** (via the Bluepad32
+library), with no involvement from `brain_runner.py` or the camera pipeline at all — this is
+what a person drives against the AI, ArUco marker IDs 3/4 (`ARUCO_ID_HUMAN1`/`HUMAN2`). Right
+trigger drives forward, left trigger reverses, both proportional to how hard they're pressed;
+the left stick steers (works in both directions); releasing both triggers stops.
+
+**Board requirement (critical):** Bluepad32 replaces the ESP32's normal Bluetooth stack, so it
+needs the **Bluepad32** board package, not plain "ESP32 Dev Module" — Boards Manager → add
+`https://raw.githubusercontent.com/ricardoquesada/esp32-arduino-lib-builder/master/bluepad32_files/package_esp32_bluepad32_index.json`
+as an Additional Board Manager URL, install "ESP32 Bluepad32", then select an ESP32 Bluepad32
+board under Tools → Board before flashing.
+
+**Pairing** (needed again any time the controller's light isn't already solid): power the
+robot, then hold **SHARE + PS** on the controller until its light bar flashes rapidly. Serial
+Monitor prints "Gamepad connected" once paired.
+
+Same wiring/direction convention as the AI firmware — if a motor spins the wrong way, flip the
+matching `INVERT_LEFT`/`INVERT_RIGHT`/`SWAP_STEER`/`INVERT_DRIVE` switch in its `CONFIG` block
+rather than rewiring.
 
 ## Dev utilities
 
