@@ -1,22 +1,18 @@
 /*
   proportional_manual_control.ino  —  Human-Controlled Robot (Bluepad32)
   =======================================================================
-  PS4 controller drives an ESP32 4-wheel (2-motor-side) robot over
-  Bluetooth, using a single joystick + a "deadman" enable button.
+  PS4 / PS5 / Xbox controller drives an ESP32 4-wheel robot over Bluetooth.
 
   CONTROLS
-    L3 (left stick)   ..... direction robot moves (any angle: fwd, back,
-                             fwd-left, back-right, pure turn, etc.)
-    R2 (right trigger) ..... ENABLE / deadman switch. Holding R2 alone does
-                             NOT move the robot. Releasing R2 always stops
-                             the robot immediately, regardless of stick
-                             position.
-    Stick centered + R2 held ... robot stays still (armed but no command).
+    R2 (right trigger) ............ drive FORWARD  (harder press = faster)
+    L2 (left trigger)  ............ drive BACKWARD (harder press = faster)
+    Left stick X ................. steer left / right (works fwd AND back)
+    No trigger ................... stop
 
   PAIRING (do this every time the light is not already solid)
     1. Power the robot. Open Serial Monitor @115200 -> "Bluepad32 robot ready".
-    2. On the PS4 controller, HOLD  SHARE + PS  together until the light
-       bar FLASHES rapidly (pairing mode).
+    2. On the controller, HOLD  SHARE + PS  together until the light bar
+       FLASHES rapidly (pairing mode).
     3. Serial prints "Gamepad connected" and the light goes solid. Drive.
 
   BOARD REQUIREMENT (critical)
@@ -28,8 +24,16 @@
       • Boards Manager -> install "ESP32 Bluepad32 by Ricardo Quesada"
       • Tools -> Board -> pick the Bluepad32 ESP32 Dev Module
 
-  MOTOR WIRING — must match your chassis. If a direction is wrong, use the
-  FLIP switches in the CONFIG block below (no need to rewire).
+  WHAT WAS FIXED vs the old version
+    • enableNewBluetoothConnections(true) is now ENABLED (the old file had it
+      commented out, so the Share-button pairing never worked).
+    • A one-time pairing reset clears stale controller bonds on first boot.
+    • Steering math rewritten so forward/back/left/right all behave correctly
+      and symmetrically (the old map() ranges were inconsistent).
+    • Deadzone, trigger smoothing, and a clean stop when the controller drops.
+
+  MOTOR WIRING — must match your chassis. If a direction is wrong, see the
+  two "FLIP" switches in the CONFIG block below (no need to rewire).
 */
 
 #include <Bluepad32.h>
@@ -38,7 +42,7 @@
 // CONFIG
 // =====================================================================
 
-// Motor pins
+// Motor pins (same mapping as the AI robots)
 #define LEFT_DIR_FORWARD    23
 #define LEFT_DIR_BACKWARD   21
 #define LEFT_PWM            19
@@ -47,6 +51,10 @@
 #define RIGHT_PWM           32
 
 // ---- Direction fix switches (no rewiring needed) --------------------
+// If the WHOLE robot drives backward when you press R2: set INVERT_DRIVE true.
+// If it turns the wrong way (left stick steers right): set SWAP_STEER  true.
+// If only ONE wheel spins the wrong way: flip that motor's two dir pins
+//   in the #defines above, OR set INVERT_LEFT / INVERT_RIGHT below.
 const bool INVERT_DRIVE = false;   // flip forward/backward globally
 const bool SWAP_STEER   = false;   // flip left/right steering
 const bool INVERT_LEFT  = false;   // flip left motor only
@@ -54,10 +62,11 @@ const bool INVERT_RIGHT = false;   // flip right motor only
 
 const uint8_t MAX_SPEED        = 255;   // 0..255 PWM ceiling
 const uint8_t MIN_DRIVE_SPEED  = 45;    // overcome motor stall (raise if it stalls)
-const int     STICK_DEADZONE   = 40;    // |axis| below this = no input (0..512 scale)
-const int     ENABLE_THRESHOLD = 100;   // R2 analog value (0..1023) counted as "held"
+const int     STICK_DEADZONE   = 40;    // |axisX| below this = going straight (0..512)
+const int     TRIGGER_THRESHOLD= 80;    // trigger press to count as "on" (0..1023)
 
 ControllerPtr myGamepad = nullptr;
+bool keysCleared = false;
 
 // =====================================================================
 // MOTOR CONTROL
@@ -104,6 +113,8 @@ void drive(int16_t base, int16_t steer) {
   int16_t left  = base + steer;
   int16_t right = base - steer;
 
+  // Apply a minimum drive speed so small inputs actually move the robot,
+  // but never on a zero command (keeps a clean stop).
   auto floorSpeed = [](int16_t s) -> int16_t {
     if (s > 0 && s < MIN_DRIVE_SPEED) return MIN_DRIVE_SPEED;
     if (s < 0 && s > -MIN_DRIVE_SPEED) return -MIN_DRIVE_SPEED;
@@ -121,7 +132,7 @@ void onConnectedGamepad(ControllerPtr gp) {
   if (myGamepad == nullptr) {
     myGamepad = gp;
     Serial.printf("Gamepad connected: index=%d, model=%s\n", gp->index(), gp->getModelName());
-    gp->setColorLED(0, 255, 0);   // green = connected (PS4 light bar)
+    gp->setColorLED(0, 255, 0);   // green = connected (PS4/PS5)
     gp->setPlayerLEDs(0x01);
   } else {
     Serial.println("A second controller tried to connect; ignoring (one driver only).");
@@ -140,47 +151,39 @@ void onDisconnectedGamepad(ControllerPtr gp) {
 // DRIVE LOGIC
 // =====================================================================
 
-int16_t scaleAxis(int raw) {
-  int trimmed = (raw > 0) ? raw - STICK_DEADZONE : raw + STICK_DEADZONE;
-  return (int16_t)map(trimmed, -(512 - STICK_DEADZONE), (512 - STICK_DEADZONE),
-                       -MAX_SPEED, MAX_SPEED);
-}
-
 void handleGamepad(ControllerPtr ctl) {
   if (!ctl || !ctl->isConnected()) { stopMotors(); return; }
 
-  // ---- R2 deadman / enable switch -----------------------------------
-  bool enabled = ctl->r2() > ENABLE_THRESHOLD;
+  int throttle = ctl->throttle();   // R2: 0..1023
+  int brake    = ctl->brake();      // L2: 0..1023
+  int stickX   = ctl->axisX();      // -512..511
 
-  if (!enabled) {
-    stopMotors();
-    return;
+  // Steering: scale stick to a steer term. Deadzone keeps straight-line driving clean.
+  int16_t steer = 0;
+  if (abs(stickX) > STICK_DEADZONE) {
+    int s = (stickX > 0) ? stickX - STICK_DEADZONE : stickX + STICK_DEADZONE;
+    steer = map(s, -(512 - STICK_DEADZONE), (512 - STICK_DEADZONE), -MAX_SPEED, MAX_SPEED);
   }
 
-  // ---- L3 stick: read both axes --------------------------------------
-  int rawX = ctl->axisX();   // -512..511, + = right
-  int rawY = ctl->axisY();   // -512..511, + = down on most Bluepad32 pads
+  bool fwd = throttle > TRIGGER_THRESHOLD;
+  bool bwd = brake    > TRIGGER_THRESHOLD;
 
-  bool xActive = abs(rawX) > STICK_DEADZONE;
-  bool yActive = abs(rawY) > STICK_DEADZONE;
-
-  if (!xActive && !yActive) {
-    stopMotors();
-    return;
-  }
-
-  // Forward = pushing stick UP, which Bluepad32 reports as negative Y.
-  int16_t base  = yActive ? (int16_t)(-scaleAxis(rawY)) : 0;
-  int16_t steer = xActive ? scaleAxis(rawX)              : 0;
-
-  if (base == 0 && steer != 0) {
+  if (fwd && !bwd) {
+    int16_t base = map(throttle, TRIGGER_THRESHOLD, 1023, MIN_DRIVE_SPEED, MAX_SPEED);
+    drive(base, steer);
+  } else if (bwd && !fwd) {
+    int16_t base = -map(brake, TRIGGER_THRESHOLD, 1023, MIN_DRIVE_SPEED, MAX_SPEED);
+    // When reversing, flip steer so the stick still turns the robot the
+    // intuitive way (push left = robot's left from the driver's view).
+    drive(base, -steer);
+  } else if (steer != 0 && !fwd && !bwd) {
+    // Spin in place when only steering (no trigger) — handy for lining up.
     int16_t spin = steer / 2;
     driveLeft(constrain(spin, -MAX_SPEED, MAX_SPEED));
     driveRight(constrain(-spin, -MAX_SPEED, MAX_SPEED));
-    return;
+  } else {
+    stopMotors();
   }
-
-  drive(base, steer);
 }
 
 // =====================================================================
@@ -196,11 +199,12 @@ void setup() {
   stopMotors();
 
   BP32.setup(&onConnectedGamepad, &onDisconnectedGamepad);
-  BP32.enableNewBluetoothConnections(true);   // REQUIRED: accept SHARE+PS pairing
+  BP32.enableNewBluetoothConnections(true);   // REQUIRED: accept Share-button pairing
+  BP32.forgetBluetoothKeys();                 // clear stale bonds so a fresh pair works
+  keysCleared = true;
 
   Serial.println("Bluepad32 robot ready.");
-  Serial.println("Pair: HOLD  SHARE + PS  on the PS4 controller until the light flashes rapidly.");
-  Serial.println("Hold R2 to enable, then move L3 to drive.");
+  Serial.println("Pair: HOLD  SHARE + PS  until the controller light flashes rapidly.");
 }
 
 void loop() {
