@@ -1,8 +1,8 @@
 /*
   proportional_manual_control.ino  —  Human-Controlled Robot (Bluepad32)
   =======================================================================
-  PS3 / PS4 / PS5 / Xbox controller drives an ESP32 4-wheel (2-motor-side)
-  robot over Bluetooth, using a single joystick + a "deadman" enable button.
+  PS4 controller drives an ESP32 4-wheel (2-motor-side) robot over
+  Bluetooth, using a single joystick + a "deadman" enable button.
 
   CONTROLS
     L3 (left stick)   ..... direction robot moves (any angle: fwd, back,
@@ -15,7 +15,7 @@
 
   PAIRING (do this every time the light is not already solid)
     1. Power the robot. Open Serial Monitor @115200 -> "Bluepad32 robot ready".
-    2. On the controller, HOLD  SHARE/CREATE + PS  together until the light
+    2. On the PS4 controller, HOLD  SHARE + PS  together until the light
        bar FLASHES rapidly (pairing mode).
     3. Serial prints "Gamepad connected" and the light goes solid. Drive.
 
@@ -121,7 +121,7 @@ void onConnectedGamepad(ControllerPtr gp) {
   if (myGamepad == nullptr) {
     myGamepad = gp;
     Serial.printf("Gamepad connected: index=%d, model=%s\n", gp->index(), gp->getModelName());
-    gp->setColorLED(0, 255, 0);   // green = connected (PS4/PS5; ignored on PS3)
+    gp->setColorLED(0, 255, 0);   // green = connected (PS4 light bar)
     gp->setPlayerLEDs(0x01);
   } else {
     Serial.println("A second controller tried to connect; ignoring (one driver only).");
@@ -196,10 +196,10 @@ void setup() {
   stopMotors();
 
   BP32.setup(&onConnectedGamepad, &onDisconnectedGamepad);
-  BP32.enableNewBluetoothConnections(true);   // REQUIRED: accept Share/Create+PS pairing
+  BP32.enableNewBluetoothConnections(true);   // REQUIRED: accept SHARE+PS pairing
 
   Serial.println("Bluepad32 robot ready.");
-  Serial.println("Pair: HOLD  SHARE/CREATE + PS  until the controller light flashes rapidly.");
+  Serial.println("Pair: HOLD  SHARE + PS  on the PS4 controller until the light flashes rapidly.");
   Serial.println("Hold R2 to enable, then move L3 to drive.");
 }
 
