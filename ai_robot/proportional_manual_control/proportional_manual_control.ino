@@ -162,7 +162,7 @@ void handleGamepad(ControllerPtr ctl) {
   int16_t steer = 0;
   if (abs(stickX) > STICK_DEADZONE) {
     int s = (stickX > 0) ? stickX - STICK_DEADZONE : stickX + STICK_DEADZONE;
-    steer = map(s, -(512 - STICK_DEADZONE), (512 - STICK_DEADZONE), -MAX_SPEED, MAX_SPEED);
+    steer = map(s, (512 - STICK_DEADZONE), -(512 - STICK_DEADZONE), -MAX_SPEED, MAX_SPEED);
   }
 
   bool fwd = throttle > TRIGGER_THRESHOLD;
