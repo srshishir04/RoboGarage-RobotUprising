@@ -105,8 +105,7 @@ ARUCO_ID_ROBOT1   = 1    # AI robot 1
 ARUCO_ID_ROBOT2   = 2    # AI robot 2 (2v2)
 ARUCO_ID_HUMAN1   = 3    # Human robot 1
 ARUCO_ID_HUMAN2   = 4    # Human robot 2 (2v2)
-ARUCO_ID_GOAL     = 5    # Scoring goal — AI shoots here (ball here → AI scores)
-ARUCO_ID_OWN_GOAL = 6    # Defended goal — human shoots here (ball here → human scores)
+
 
 # Arena corner ArUco IDs → physical position (from camera image, top-left origin)
 # Verified against camera screenshot:
