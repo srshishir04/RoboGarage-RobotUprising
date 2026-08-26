@@ -4,6 +4,12 @@ This is the handoff guide for whoever continues this project next. It assumes ge
 familiarity but zero context on this specific game — every section below tells you exactly
 which file to open for a given task.
 
+## Screenshots
+
+| Main Menu | Match HUD (camera popover open) |
+|---|---|
+| ![Main Menu — difficulty and match mode selection](docs/images/main-menu.png) | ![Match HUD with the camera settings popover open](docs/images/game-hud.png) |
+
 ## 1. Opening the project
 
 - **Editor version: Unity `6000.3.8f1`** (Unity 6). Install via Unity Hub — opening with a
