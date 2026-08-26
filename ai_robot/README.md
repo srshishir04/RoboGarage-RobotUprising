@@ -6,15 +6,37 @@ runs the trained brain, and drives the ESP32-controlled robots over UDP. Unity i
 ball/robot physics of its own; everything physical is real, on the real arena, and this file is
 what's actually running the match.
 
-## Core
+## Folder structure
+
+```
+ai_robot/
+├── core/                        the two files that make a match actually run
+│   ├── brain_runner.py          main runtime — see "Thread architecture" below
+│   └── config.py                single source of truth for ports, IPs, ArUco IDs, physics contract, brain paths
+├── tools/                       standalone dev/calibration scripts — run manually, one at a time
+│   ├── aruco_generator.py
+│   ├── camera_probe.py
+│   └── udp_motor_test.py
+├── brains/                      trained .onnx brain files (see "Brain files" below)
+├── Aruco Markers/                pre-generated, ready-to-print marker images (see below)
+├── esp32_wifi_brain/             AI-robot firmware
+├── proportional_manual_control/  human-robot firmware
+└── camera_settings.json          persisted camera exposure/gain (not moved — lives at this root)
+```
+
+`config.py` and `brain_runner.py` are grouped in `core/` because they're the two files that
+define *what a match actually is* — everything else is either a one-off tool you run by hand
+(`tools/`), a data folder (`brains/`, `Aruco Markers/`), or firmware that isn't Python at all.
+
+## Core (`core/`)
 
 | File | Role |
 |---|---|
 | `brain_runner.py` | Main runtime — see "Thread architecture" below. |
-| `config.py` | Single source of truth for network ports, robot IPs, ArUco IDs, the physics contract (must match `RobotAgent.cs`), and brain file paths. Sectioned 1-10 (Network, Robots, Arena, Homography, Models, Vision, Physics contract, Brain timing, Safety, Debug) — read the section header comments before changing anything. |
-| `camera_settings.json` | Persisted camera exposure/gain, editable live from Unity's `CameraControl.cs` sliders (or by hand). |
+| `config.py` | Single source of truth for network ports, robot IPs, ArUco IDs, the physics contract (must match `RobotAgent.cs`), and brain file paths. Sectioned 1-10 (Network, Robots, Arena, Homography, Models, Vision, Physics contract, Brain timing, Safety, Debug) — read the section header comments before changing anything. Its `_HERE` constant points at the `ai_robot/` root (one level up from `core/`), since `camera_settings.json` and `brains/` live there, not inside `core/` itself. |
+| `camera_settings.json` (at the `ai_robot/` root, not in `core/`) | Persisted camera exposure/gain, editable live from Unity's `CameraControl.cs` sliders (or by hand). |
 
-## Thread architecture (`brain_runner.py`, started in `if __name__ == "__main__"`)
+## Thread architecture (`core/brain_runner.py`, started in `if __name__ == "__main__"`)
 
 Six daemon threads, all reading/writing a handful of lock-protected shared state:
 
@@ -33,17 +55,19 @@ signals shutdown and closes every socket cleanly.
 ## Running it
 
 **Standalone (no Unity, no real robots)** — useful for checking the camera/ArUco/ball pipeline
-in isolation: `python brain_runner.py` and watch the console. It starts all 6 threads
+in isolation: `cd core && python brain_runner.py` and watch the console. It starts all 6 threads
 regardless; without a `START` message from Unity, the Brain thread just waits forever, but
 Camera/ArUco/Balls run immediately against whatever webcam is at `config.CAMERA_INDEX`. Useful
-dev tools for this stage: `camera_probe.py` (one-time exposure/gain calibration) and
-`udp_motor_test.py` (raw motor-command isolation test, run with `brain_runner.py` **stopped** —
-both bind `ESP32_STATUS_PORT`/4214, only one process at a time).
+dev tools for this stage: `tools/camera_probe.py` (one-time exposure/gain calibration) and
+`tools/udp_motor_test.py` (raw motor-command isolation test, run with `brain_runner.py`
+**stopped** — both bind `ESP32_STATUS_PORT`/4214, only one process at a time). Both tools work
+from any working directory — they locate `core/config.py` relative to their own file location,
+not relative to where you launch them from.
 
-**Full system:** run `brain_runner.py`, then open `MainMenu.unity` in Unity (or the built game)
-and pick a difficulty/mode. `MainMenuUI.cs` → `FrameSender.cs` sends `START:<difficulty>:<mode>`
-on port 4213, which is what actually starts inference — everything before that is just the
-camera/tracking pipeline warming up.
+**Full system:** run `core/brain_runner.py`, then open `MainMenu.unity` in Unity (or the built
+game) and pick a difficulty/mode. `MainMenuUI.cs` → `FrameSender.cs` sends
+`START:<difficulty>:<mode>` on port 4213, which is what actually starts inference — everything
+before that is just the camera/tracking pipeline warming up.
 
 ## Brain files (`brains/`)
 
@@ -120,6 +144,13 @@ brains are unaffected either way.
 There are two kinds of physical robot in a match, and they run **different, unrelated**
 firmware — don't flash the wrong one onto the wrong chassis:
 
+**Default state: every physical robot ships flashed with `proportional_manual_control.ino`.**
+None of them run the AI firmware out of the box. To use a robot as an AI-controlled player,
+you must explicitly reflash it with `esp32_wifi_brain.ino` (see below) — there is no separate
+"AI robot" hardware, only a robot that has or hasn't been reflashed. If a robot won't respond to
+`brain_runner.py`, check this first before debugging WiFi/IPs: it may simply still be running
+the manual-control firmware.
+
 ### AI robot(s) — `esp32_wifi_brain/esp32_wifi_brain.ino`
 
 Receives single-byte motor commands (`F`/`L`/`R`/`B`/`S`) from `brain_runner.py` over **WiFi**
@@ -142,11 +173,13 @@ header comment (`SWAP_MOTORS`) before touching anything else; editing both the f
 
 ### Human/opponent robot — `proportional_manual_control/proportional_manual_control.ino`
 
-Drives a robot manually from a PS4/PS5/Xbox controller over **Bluetooth** (via the Bluepad32
-library), with no involvement from `brain_runner.py` or the camera pipeline at all — this is
-what a person drives against the AI, ArUco marker IDs 3/4 (`ARUCO_ID_HUMAN1`/`HUMAN2`). Right
-trigger drives forward, left trigger reverses, both proportional to how hard they're pressed;
-the left stick steers (works in both directions); releasing both triggers stops.
+**This is what every robot runs by default** (see the note above) — no flashing needed to use a
+robot this way. Drives a robot manually from a PS4/PS5/Xbox controller over **Bluetooth** (via
+the Bluepad32 library), with no involvement from `brain_runner.py` or the camera pipeline at all
+— this is what a person drives against the AI, ArUco marker IDs 3/4
+(`ARUCO_ID_HUMAN1`/`HUMAN2`). Right trigger drives forward, left trigger reverses, both
+proportional to how hard they're pressed; the left stick steers (works in both directions);
+releasing both triggers stops.
 
 **Board requirement (critical):** Bluepad32 replaces the ESP32's normal Bluetooth stack, so it
 needs the **Bluepad32** board package, not plain "ESP32 Dev Module" — Boards Manager → add
@@ -162,16 +195,45 @@ Same wiring/direction convention as the AI firmware — if a motor spins the wro
 matching `INVERT_LEFT`/`INVERT_RIGHT`/`SWAP_STEER`/`INVERT_DRIVE` switch in its `CONFIG` block
 rather than rewiring.
 
-## Dev utilities
+## Dev utilities (`tools/`)
 
 | File | Purpose |
 |---|---|
-| `aruco_generator.py` | One-off ArUco marker image generator. |
-| `camera_probe.py` | One-time webcam calibration helper — run once per camera/computer. |
-| `udp_motor_test.py` | Isolation test for ESP32 motor commands, independent of the brain/camera. |
+| `tools/aruco_generator.py` | Regenerates the 4 corner markers (IDs 46-49) into `Aruco Markers/`. Only needed if you want to reprint just the corners — the full marker set is already pre-generated (see below). |
+| `tools/camera_probe.py` | One-time webcam calibration helper — run once per camera/computer. |
+| `tools/udp_motor_test.py` | Isolation test for ESP32 motor commands, independent of the brain/camera. |
+
+## Aruco Markers (`Aruco Markers/`)
+
+Pre-generated, ready-to-print marker images — the full set the tracking pipeline needs, already
+matching `config.py`'s ID scheme, so you don't have to generate anything from scratch for a
+normal setup:
+
+| File | ArUco ID | Meaning |
+|---|---|---|
+| `AI_Robot_4x4_50_id1.png` | 1 | AI robot 1 (`ARUCO_ID_ROBOT1`) |
+| `AI_Robot_4x4_50_id2.png` | 2 | AI robot 2 (`ARUCO_ID_ROBOT2`) |
+| `Human_Robot_4x4_50_id3.png` | 3 | Human/opponent robot 1 (`ARUCO_ID_HUMAN1`) |
+| `Human_Robot_4x4_50_id4.png` | 4 | Human/opponent robot 2 (`ARUCO_ID_HUMAN2`) |
+| `Corner_4x4_50_id46.png`–`id49.png` | 46-49 | Arena corners (`ARENA_CORNER_IDS`), used to compute the bird's-eye homography |
+
+Print these, tape/mount each on the correct robot or arena corner, and the ArUco thread will
+track it automatically — no calibration step needed for the markers themselves (just the camera,
+via `tools/camera_probe.py`). If you ever need to reprint just the 4 corner markers, run
+`tools/aruco_generator.py`; the robot/opponent markers (IDs 1-4) don't currently have a
+regeneration script and should be treated as the source of truth if you need more copies.
+
+## Hardware status (handover note)
+
+As of this cleanup pass, two robots have already-diagnosed physical issues — both are labeled
+with markers on the hardware itself, no re-diagnosis needed:
+
+- **Orange robot**: ESP32 is broken/dead and needs replacing before this robot can run either
+  firmware again.
+- **Red robot**: has a wiring issue; the ESP32 and motors themselves are fine.
 
 ## Housekeeping
 
-`__pycache__/` is gitignored (`.gitignore`) — don't commit Python bytecode cache. Debug
-snapshots written by the ArUco/ball detectors at runtime aren't tracked in git either; they
-regenerate on demand.
+`__pycache__/` is gitignored (`.gitignore`) — don't commit Python bytecode cache, including the
+copy that now regenerates under `core/`. Debug snapshots written by the ArUco/ball detectors at
+runtime aren't tracked in git either; they regenerate on demand.

@@ -26,7 +26,9 @@ equal the matching fields in RobotAgent.cs, or sim-to-real breaks. They are:
 
 import os
 
-_HERE = os.path.dirname(os.path.abspath(__file__))
+# ai_robot/ root — NOT this file's own directory (config.py lives in ai_robot/core/,
+# but camera_settings.json and brains/ live one level up, at the ai_robot/ root).
+_HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 1. NETWORK

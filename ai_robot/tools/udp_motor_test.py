@@ -25,7 +25,11 @@ stops itself 400 ms after the last packet — its safety watchdog — so a singl
 packet would look like nothing happened). A line prints every second telling you
 whether an "OK" beacon has arrived from the robot on port 4214.
 """
-import socket, sys, threading, time
+import os, socket, sys, threading, time
+
+# config.py lives in ai_robot/core/, a sibling of this file's tools/ folder —
+# add it to sys.path so `import config` resolves regardless of cwd.
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "core"))
 import config as C
 
 ROBOT_IP    = sys.argv[1] if len(sys.argv) > 1 else C.ROBOT1_IP

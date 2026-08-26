@@ -19,7 +19,7 @@ the project.
 Extract `RoboGarageUprising.zip` anywhere and run the `.exe` inside — it needs its sibling
 `_Data` folder and a couple of DLLs to be in the same directory (that's why it's a zip and not
 a single `.exe` — a Unity build is never truly one file). This gets you the menu and the match
-HUD, but **not a real match** — with no `ai_robot/brain_runner.py` running, there's no camera
+HUD, but **not a real match** — with no `ai_robot/core/brain_runner.py` running, there's no camera
 feed, no brain inference, and no physical robots to control. It's for looking at the UI/HUD,
 not playing.
 
@@ -28,10 +28,10 @@ not playing.
 1. Open `ai_robot/esp32_wifi_brain/esp32_wifi_brain.ino` and set `WIFI_SSID`/`WIFI_PASSWORD` to
    your own network (placeholders by default — no real credentials ship in this repo), then
    flash it to each robot's ESP32 and note the IP each one prints over serial.
-2. Set those IPs in `ai_robot/config.py` (`ROBOT1_IP`/`ROBOT2_IP` — also placeholders by
+2. Set those IPs in `ai_robot/core/config.py` (`ROBOT1_IP`/`ROBOT2_IP` — also placeholders by
    default), and confirm the physics contract constants there match
    `Unity/Assets/Scripts/Agent/RobotAgent.cs`.
-3. Run `python ai_robot/brain_runner.py` — this owns the webcam and starts tracking/inference
+3. Run `python ai_robot/core/brain_runner.py` — this owns the webcam and starts tracking/inference
    threads (see `ai_robot/README.md` for the full architecture).
 4. Open `Unity/` in the Unity Editor (or run the extracted `RoboGarageUprising.zip` build) and
    go through

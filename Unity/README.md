@@ -4,12 +4,6 @@ This is the handoff guide for whoever continues this project next. It assumes ge
 familiarity but zero context on this specific game — every section below tells you exactly
 which file to open for a given task.
 
-## Screenshots
-
-| Main Menu | Match HUD (camera popover open) |
-|---|---|
-| ![Main Menu — difficulty and match mode selection](docs/images/main-menu.png) | ![Match HUD with the camera settings popover open](docs/images/game-hud.png) |
-
 ## 1. Opening the project
 
 - **Editor version: Unity `6000.3.8f1`** (Unity 6). Install via Unity Hub — opening with a
@@ -21,6 +15,8 @@ which file to open for a given task.
   package version above. **The matching pip version isn't pinned anywhere in this repo** — check
   the [ML-Agents releases page](https://github.com/Unity-Technologies/ml-agents/releases) for
   the Python package that corresponds to Unity package `4.0.2` before running `mlagents-learn`.
+  A step-by-step walkthrough of this setup is in
+  [`docs/Setup & installation guide.pdf`](docs/Setup%20%26%20installation%20guide.pdf).
 
 ## 2. Project structure — what's in `Assets/` and why
 
@@ -123,7 +119,7 @@ misled by stale checkpoint weights.
 2. Rename it to match the convention `ai_robot/brains/<mode>_<difficulty>.onnx` — e.g.
    `1v1_easy.onnx`, `2v2_hard.onnx` (see `ai_robot/README.md`).
 3. Drop it into `ai_robot/brains/`, replacing the old file of the same name.
-4. **That's it for 1v1** — `ai_robot/config.py`'s `ONNX_PATHS` and `GameSettings.cs`'s
+4. **That's it for 1v1** — `ai_robot/core/config.py`'s `ONNX_PATHS` and `GameSettings.cs`'s
    `DeriveOnnxFileName()` already resolve by this naming convention; no code changes needed.
 5. **For 2v2, there's an additional gap** — see §6, item 2. The brain will load, but the
    observations Python sends it won't match what it was trained on.
