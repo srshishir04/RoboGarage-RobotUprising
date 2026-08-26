@@ -52,7 +52,7 @@ const int   STATUS_PORT   = 4214;   // status out   (match config.py ESP32_STATU
 #define B_PWM            19
 
 const uint8_t DRIVE_SPEED = 200;   // 0-255
-const uint8_t TURN_SPEED  = 180;
+const uint8_t TURN_SPEED  = 200;
 
 #define STATUS_LED 2               // onboard LED
 

@@ -24,7 +24,9 @@ which file to open for a given task.
   A step-by-step walkthrough of this setup is in
   [`docs/Setup & installation guide.pdf`](docs/Setup%20%26%20installation%20guide.pdf).
 
-## 2. Project structure — what's in `Assets/` and why
+## 2. Project structure — what's where and why
+
+Inside `Assets/`:
 
 | Folder | Contents | Plain-language purpose |
 |---|---|---|
@@ -36,9 +38,15 @@ which file to open for a given task.
 | `Scripts/UI/Components/` | 16 small reusable scripts (buttons, sliders, score pod, timer, status dot, segmented selectors, popover, modal, resize controllers) | The actual visual/interactive UI building blocks. See §3 for how to restyle them. |
 | `Editor/UIBuilder/` | 11 Editor-only tools | Code that *constructed* the UI (see §3) — not part of the shipped game, only runs inside the Editor via `Tools/RoboGarage UI/...` menu items. |
 | `Prefabs/` | `Environment.prefab`, `OpponentRobot.prefab`, `Prefabs/UI/*` | Training-arena content; the 10 UI component prefabs. |
-| `config/` | `Ra_easy.yaml`, `Ra_medium.yaml`, `Ra_hard.yaml`, `Ra_2v2.yaml` | ML-Agents trainer configs — see §4. |
 | `Materials/`, `Meshes/`, `Images/`, `Textures/UI/`, `Fonts/`, `TextMesh Pro/` | Supporting assets | Arena visuals, ArUco corner-marker materials, UI sprites/fonts. |
+
+At the `Unity/` project root (siblings of `Assets/`, not inside it):
+
+| Path | Contents | Plain-language purpose |
+|---|---|---|
+| `config/` | `Ra_easy.yaml`, `Ra_medium.yaml`, `Ra_hard.yaml`, `Ra_2v2.yaml` | ML-Agents trainer configs — see §4. |
 | `CHANGES.md` | — | Detailed log of the RobotAgent egocentric-observation redesign — read this if anything about observations/rewards looks unfamiliar. |
+| `docs/` | Setup PDF, screenshots | This README's supporting images and the ML-Agents setup/installation guide. |
 
 **Not in Unity at all:** the trained `.onnx` brain files. Those live in `ai_robot/brains/` on
 the Python side, not under `Assets/`. `Assets/AI Model/` (a stale single `RobotAgent.onnx`

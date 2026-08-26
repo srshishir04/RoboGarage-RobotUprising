@@ -93,10 +93,14 @@ baseline for manual testing without a curriculum; `opponent_skill` from the YAML
 at runtime. This is what makes the opponent "progressively challenging" rather than 3 discrete
 rungs — see the new curriculum blocks in `Ra_medium.yaml`/`Ra_hard.yaml`/`Ra_2v2.yaml`.
 
-## 6. Python side — required changes, NOT yet made (tell me if you want these done too)
+## 6. Python side — since done and verified (see `ai_robot/README.md`)
 
 I did not touch `brain_runner.py`/`config.py` this round (your file list didn't include
-them) — but the redesign does not work end-to-end on real hardware without these:
+them) — but the redesign does not work end-to-end on real hardware without these. **All four
+items below have since been implemented in `ai_robot/core/brain_runner.py`/`config.py` and
+verified against real ONNX inference (hand-checked field-by-field, plus heading-invariance and
+multi-step simulation sweeps) — see the "Observations" section of `ai_robot/README.md` for the
+full verification writeup.** Left here as a historical record of what changed and why:
 
 1. **`build_observations()` must apply the same egocentric rotation.** Currently it computes
    `rel()` as a world-axis-aligned `(dx, dz)` offset, matching the *old* `SafeVec`. It needs
@@ -119,16 +123,16 @@ them) — but the redesign does not work end-to-end on real hardware without the
    new function mirroring `CollectTeamObservations`'s exact 26-slot order (including
    teammate + fixed opponent1/opponent2 ordering) needs to be written from scratch.
 
-I can do all four as a follow-up once you're ready — say so and I'll treat it as its own
-task rather than bundling it into this already-large change.
+All four are done — see `ai_robot/README.md`'s "Observations" section for the verification
+evidence.
 
 ## 7. Files changed/added
 
 | File | What changed |
 |---|---|
-| `Unity/Assets/AI Scripts/RobotAgent.cs` | Full redesign per §1-4 above, built on your pasted draft |
-| `Unity/Assets/AI Scripts/ScriptedOpponent.cs` | Continuous skill system per §5, field rename |
-| `Unity/Assets/AI Scripts/GameSettings.cs` | `ObsSize` is now match-mode-aware (was silently wrong for 2v2 — see below) |
+| `Unity/Assets/Scripts/Agent/RobotAgent.cs` | Full redesign per §1-4 above, built on your pasted draft |
+| `Unity/Assets/Scripts/Agent/ScriptedOpponent.cs` | Continuous skill system per §5, field rename |
+| `Unity/Assets/Scripts/Core/GameSettings.cs` | `ObsSize` is now match-mode-aware (was silently wrong for 2v2 — see below) |
 | `Unity/config/Ra_easy.yaml` | New location (per your note it lived in `Unity/config` on your other machine). No hyperparameter changes — reward scale unchanged |
 | `Unity/config/Ra_medium.yaml` | Added `opponent_skill` curriculum |
 | `Unity/config/Ra_hard.yaml` | Added `opponent_skill` curriculum |

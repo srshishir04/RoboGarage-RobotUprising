@@ -52,7 +52,8 @@ how to wire a freshly-trained brain back into the game.
 
 - `Unity/Library/`, `Logs/`, `UserSettings/` are Unity-regenerated caches — never commit them
   (see `Unity/.gitignore`).
-- `ai_robot/__pycache__/` is Python bytecode cache — gitignored, don't commit it.
+- `__pycache__/` folders under `ai_robot/core/` and `ai_robot/tools/` are Python bytecode
+  cache — gitignored (matched at any depth by `ai_robot/.gitignore`), don't commit them.
 - `RoboGarageUprising.zip` is tracked via **Git LFS**, not plain git — the onnx brain files
   alone had already bloated `.git` significantly before this was set up; a repeatedly-rebuilt
   70MB+ archive under plain git would make that much worse. Make sure `git-lfs` is installed

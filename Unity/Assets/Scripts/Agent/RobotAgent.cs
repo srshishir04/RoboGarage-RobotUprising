@@ -119,7 +119,8 @@ public class RobotAgent : Agent
     // dominated). Real robot was measured at TURN_SPEED=220 -> 225-250 deg/s; it has
     // NOT been re-measured at the firmware's CURRENT TURN_SPEED=200, so there is no
     // trustworthy target to tune turnTorque (or WheelCollider sideways friction) against.
-    // TODO(calibration): re-measure real robot turn rate at TURN_SPEED=200, then decide
+    // TODO(calibration): re-measure real robot turn rate at TURN_SPEED=200 (the value the
+    // current brains were trained/calibrated against — esp32_wifi_brain.ino), then decide
     // whether to raise WheelCollider Sideways Friction (Extremum Value/Stiffness) or
     // accept ~180 deg/s as close enough. Do not change turnTorque without that number.
     [SerializeField] private float turnTorque = 12f;      // in-place turn only
